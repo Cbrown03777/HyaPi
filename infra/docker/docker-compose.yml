@@ -1,0 +1,14 @@
+
+services:
+  db:
+    image: postgres:16
+    container_name: hyapi-db
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hyapi
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+      - ../db:/docker-entrypoint-initdb.d:ro  # runs 001_init.sql on first boot
+

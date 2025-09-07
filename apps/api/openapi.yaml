@@ -1,0 +1,213 @@
+openapi: "3.1.0"
+info:
+  title: hyaPi Governance API
+  version: 0.1.0
+  description: Governance endpoints for proposals, votes, results, and execution.
+servers:
+  - url: https://api.hyapi.app
+components:
+  securitySchemes:
+    PiSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+  schemas:
+    ApiEnvelope:
+      type: object
+      properties:
+        success: { type: boolean }
+        data: {}
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+    ProposalCreate:
+      type: object
+      required: [title, allocation]
+      properties:
+        title: { type: string, minLength: 3, maxLength: 140 }
+        description: { type: string }
+        allocation:
+          type: object
+          required: [sui, aptos, cosmos]
+          properties:
+            sui: { type: number, minimum: 0, maximum: 1 }
+            aptos: { type: number, minimum: 0, maximum: 1 }
+            cosmos: { type: number, minimum: 0, maximum: 1 }
+    ProposalSummary:
+      type: object
+      properties:
+        proposal_id: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [active, accepted, rejected, expired, cancelled, queued, executed] }
+        start_ts: { type: string, format: date-time }
+        end_ts: { type: string, format: date-time }
+        allocation:
+          $ref: '#/components/schemas/ProposalCreate/properties/allocation'
+        tally:
+          type: object
+          properties:
+            for_power: { type: string }
+            against_power: { type: string }
+            abstain_power: { type: string }
+    ProposalDetail:
+      allOf:
+        - $ref: '#/components/schemas/ProposalSummary'
+        - type: object
+          properties:
+            snapshot_id: { type: string }
+            quorum_met: { type: boolean }
+            passed: { type: boolean }
+            total_votes_power: { type: string }
+    VoteCast:
+      type: object
+      required: [support]
+      properties:
+        support:
+          type: string
+          enum: [for, against, abstain]
+    VoteReceipt:
+      type: object
+      properties:
+        proposal_id: { type: string }
+        your_vote: { type: string }
+        your_power: { type: string }
+        tally:
+          $ref: '#/components/schemas/ProposalSummary/properties/tally'
+security:
+  - PiSession: []
+paths:
+  /v1/gov/proposals:
+    get:
+      summary: List proposals
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, past] }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ProposalSummary' }
+    post:
+      summary: Create proposal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProposalCreate' }
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          proposal_id: { type: string }
+                          snapshot_id: { type: string }
+                          start_ts: { type: string, format: date-time }
+                          end_ts: { type: string, format: date-time }
+                          status: { type: string }
+  /v1/gov/proposals/{id}:
+    get:
+      summary: Get proposal detail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/ProposalDetail' }
+  /v1/gov/proposals/{id}/votes:
+    post:
+      summary: Cast or replace a vote
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoteCast' }
+      responses:
+        '200':
+          description: Vote accepted
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data: { $ref: '#/components/schemas/VoteReceipt' }
+    get:
+      summary: List votes (paged)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK
+  /v1/gov/proposals/{id}/finalize:
+    post:
+      summary: Finalize a proposal (scheduler use)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Finalized
+  /v1/gov/execution/{proposal_id}:
+    post:
+      summary: Execute accepted allocation (scheduler use)
+      parameters:
+        - name: proposal_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Executed

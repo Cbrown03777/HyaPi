@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "esModuleInterop": true,
+    "strict": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "baseUrl": "src",
+    "paths": {
+      "@/api/*": ["*"],
+      "@hyapi/alloc": ["../../packages/alloc/dist/src/index.d.ts"],
+      "@hyapi/venues": ["../../packages/venues/dist/index.d.ts"]
+    }
+  },
+  "include": ["src"]
+}

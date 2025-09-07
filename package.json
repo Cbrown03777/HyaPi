@@ -1,0 +1,22 @@
+{
+  "name": "hyaPi",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "pnpm -w -F @hyapi/alloc test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.15.0",
+  "devDependencies": {
+    "@apollo/rover": "^0.35.0",
+    "@types/node": "^24.3.0",
+    "eslint": "^9.33.0",
+    "prettier": "^3.6.2",
+    "ts-node-dev": "^2.0.0",
+    "turbo": "^2.5.6",
+    "typescript": "^5.9.2"
+  }
+}

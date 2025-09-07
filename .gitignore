@@ -1,0 +1,131 @@
+############################
+# Monorepo / Node / TypeScript
+############################
+node_modules/
+pnpm-debug.log*
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+.cache/
+.tmp/
+temp/
+tmp/
+dist/
+build/
+lib/
+.out/
+.out*/
+coverage/
+reports/
+**/tsconfig.tsbuildinfo
+
+############################
+# Next.js / Frontend
+############################
+.next/
+.next.cache/
+.vercel/
+*.swp
+
+############################
+# Environment & Secrets
+############################
+# Root + per-app env files (DO NOT COMMIT SECRETS)
+.env
+.env.*
+!.env.example
+apps/*/.env
+apps/*/.env.*
+!apps/*/.env.example
+packages/*/.env
+packages/*/.env.*
+!packages/*/.env.example
+
+# If you keep local overrides:
+*.local
+*.secret
+
+############################
+# Logs / PIDs
+############################
+logs/
+**/*.log
+*.pid
+*.pid.lock
+
+############################
+# OS / Editor / Tooling
+############################
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sw?
+*.orig
+
+############################
+# Docker / Runtime
+############################
+docker-data/
+.docker/
+*.tar
+
+############################
+# Misc Caches
+############################
+.eslintcache
+.prettier-cache
+.stylelintcache
+.turbo/
+.cache-loader/
+parcel-cache/
+.cache/
+.sass-cache/
+storybook-static/
+.storybook-out/
+
+############################
+# Generated Assets
+############################
+public/generated/
+**/generated/
+**/*.generated.*
+
+############################
+# SQLite / Local DB / Dumps
+############################
+*.sqlite
+*.sqlite-journal
+*.dump.sql
+db/
+data/
+database/
+pgdata/
+
+############################
+# Crypto / Keys (pattern safety)
+############################
+*.pem
+*.key
+*.crt
+*.p12
+*.keystore
+
+############################
+# Optional: Ignore shell history if copied in
+############################
+*.history
+
+############################
+# Lockfiles (keep pnpm-lock.yaml – DO NOT ignore!)
+############################
+# (intentionally not ignoring pnpm-lock.yaml to ensure reproducible builds)
+############################

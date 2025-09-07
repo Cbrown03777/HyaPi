@@ -1,0 +1,18 @@
+{
+	"name": "@hyapi/alloc",
+	"version": "0.0.1",
+	"main": "dist/src/index.js",
+	"types": "dist/types/index.d.ts",
+	"license": "MIT",
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"test": "node --test dist/__tests__/alloc.test.js"
+	},
+	"dependencies": {
+		"zod": "^3.25.0"
+	},
+	"devDependencies": {
+		"typescript": "^5.9.0",
+		"@types/node": "^20.11.0"
+	}
+}
