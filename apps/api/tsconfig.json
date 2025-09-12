@@ -12,9 +12,7 @@
     "types": ["node"],
     "baseUrl": "src",
     "paths": {
-      "@/api/*": ["*"],
-      "@hyapi/alloc": ["../../packages/alloc/dist/src/index.d.ts"],
-      "@hyapi/venues": ["../../packages/venues/dist/index.d.ts"]
+      "@/api/*": ["*"]
     }
   },
   "include": ["src"]

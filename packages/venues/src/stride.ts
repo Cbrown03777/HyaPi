@@ -3,23 +3,41 @@
  */
 import { Rate, VenueConnector } from './types';
 
-const STRIDE_FALLBACK: Record<string, number> = {
-	stATOM: Number(process.env.STRIDE_STATOM_APR ?? '0.12'),
-	stTIA: Number(process.env.STRIDE_STTIA_APR ?? '0.14')
-};
+// Demo fallback APRs (will be replaced by live Stride / external API integration)
+// Snapshot (intended for Pi Core Team demo Sept 19) with per-call env reload so
+// changing STRIDE_* env vars + a hot reload (Next dev / process restart in prod)
+// updates values without needing to rebuild this package.
+function currentAprMap(): Record<string, number> {
+	const n = (v: string | undefined, d: string) => {
+		if (v == null || v.trim() === '') return Number(d);
+		const parsed = Number(v);
+		return Number.isFinite(parsed) ? parsed : Number(d);
+	};
+	return {
+		stATOM: n(process.env.STRIDE_STATOM_APR, '0.1514'),
+		stTIA:  n(process.env.STRIDE_STTIA_APR,  '0.11'),
+		stJUNO: n(process.env.STRIDE_STJUNO_APR, '0.2262'),
+		stLUNA: n(process.env.STRIDE_STLUNA_APR, '0.1772'),
+		stBAND: n(process.env.STRIDE_STBAND_APR, '0.1543'),
+	};
+}
 
 export const stride: VenueConnector = {
 	async getLiveRates(markets) {
 		const now = new Date().toISOString();
-		const symbols = markets?.length ? markets : Object.keys(STRIDE_FALLBACK);
-		return symbols.map<Rate>(s => ({
-			venue: 'stride',
-			chain: 'cosmos',
-			market: s,
-			baseApr: STRIDE_FALLBACK[s] ?? 0.12,
-			baseApy: (1 + (STRIDE_FALLBACK[s] ?? 0.12)/365)**365 - 1,
-			asOf: now
-		}));
+		const aprs = currentAprMap();
+		const symbols = markets?.length ? markets : Object.keys(aprs);
+		return symbols.map<Rate>(s => {
+			const apr = aprs[s] ?? 0.12;
+			return {
+				venue: 'stride',
+				chain: 'cosmos',
+				market: s,
+				baseApr: apr,
+				baseApy: (1 + apr/365)**365 - 1,
+				asOf: now
+			};
+		});
 	},
 	estimateApy(rate, opts) {
 		const comp = Math.max(1, opts?.compounding ?? 365);

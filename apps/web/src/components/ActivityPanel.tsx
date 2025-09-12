@@ -1,5 +1,6 @@
 "use client";
 import React, { useEffect } from "react";
+import { Card, CardContent, Typography, IconButton, Chip, Box, Stack, Divider, Tooltip } from '@mui/material';
 import { useActivity } from "./ActivityProvider";
 import { GOV_API_BASE } from "@hyapi/shared";
 import { fmtCompact } from "@/lib/format";
@@ -45,41 +46,35 @@ export function ActivityPanel() {
   }, [log]);
   if (!items.length) return null;
   return (
-    <div className="mt-4 rounded-xl2 border border-base-200 bg-white/70 p-3 shadow-card backdrop-blur">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-sm font-medium text-base-800">Recent activity</div>
-        <button className="text-xs text-base-600 hover:text-base-800" onClick={clear}>Clear</button>
-      </div>
-      <ul className="divide-y divide-base-200">
-        {items.slice(0, 8).map((e) => (
-          <li key={e.id} className="flex items-start justify-between py-2 text-sm">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span
-                  className={
-                    "inline-flex h-5 w-5 items-center justify-center rounded-full text-xs " +
-                    (e.status === "success"
-                      ? "bg-success/20 text-success"
-                      : e.status === "error"
-                      ? "bg-danger/20 text-danger"
-                      : "bg-primary-100 text-primary-700")
-                  }
-                  aria-hidden
-                >
-                  {e.kind === "stake" ? "⇪" : e.kind === "redeem" ? "⇄" : e.kind === "vote" ? "✓" : e.kind === "finalize" ? "⚑" : "▶"}
-                </span>
-                <div className="truncate font-medium text-base-900">{e.title}</div>
-              </div>
-              {e.detail && (
-                <div className="mt-0.5 truncate text-xs text-base-600">
-                  {e.detail.replace(/(\d+(?:\.\d+)?)\s?(Pi|hyaPi)/gi, (_, num, unit) => `${fmtCompact(Number(num))} ${unit}`)}
-                </div>
-              )}
-            </div>
-            <div className="shrink-0 text-xs text-base-500">{timeAgo(e.ts)}</div>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <Card variant="outlined" sx={{ mt: 4, backdropFilter: 'blur(8px)', background: 'linear-gradient(145deg, rgba(255,255,255,0.05), rgba(255,255,255,0.12))' }}>
+      <CardContent sx={{ py: 2 }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+          <Typography variant="subtitle2" fontWeight={600}>Recent activity</Typography>
+          <Typography component="button" onClick={clear} sx={{ cursor: 'pointer', border: 'none', background: 'none', p: 0, m: 0, fontSize: 11, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>Clear</Typography>
+        </Stack>
+        <Stack divider={<Divider flexItem sx={{ borderColor: 'divider', opacity: 0.4 }} />} spacing={0}>
+          {items.slice(0,8).map(e => {
+            const color = e.status === 'success' ? 'success' : e.status === 'error' ? 'error' : 'primary';
+            const icon = e.kind === 'stake' ? '⇪' : e.kind === 'redeem' ? '⇄' : e.kind === 'vote' ? '✓' : e.kind === 'finalize' ? '⚑' : '▶';
+            return (
+              <Stack key={e.id} direction="row" spacing={2} alignItems="flex-start" py={1}>
+                <Box aria-hidden sx={{ width: 24, height: 24, borderRadius: '50%', fontSize: 12, bgcolor: `${color}.main`, color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, opacity: 0.9 }}>
+                  {icon}
+                </Box>
+                <Box flex={1} minWidth={0}>
+                  <Typography variant="body2" fontWeight={600} noWrap>{e.title}</Typography>
+                  {e.detail && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
+                      {e.detail.replace(/(\d+(?:\.\d+)?)\s?(Pi|hyaPi)/gi, (_, num, unit) => `${fmtCompact(Number(num))} ${unit}`)}
+                    </Typography>
+                  )}
+                </Box>
+                <Typography variant="caption" color="text.disabled" sx={{ whiteSpace: 'nowrap' }}>{timeAgo(e.ts)}</Typography>
+              </Stack>
+            );
+          })}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,10 +1,30 @@
 "use client";
+import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import clsx from 'clsx';
 import { useI18n } from './I18nProvider';
+import AppBar from '@mui/material/AppBar';
+import Toolbar from '@mui/material/Toolbar';
+import Container from '@mui/material/Container';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import Drawer from '@mui/material/Drawer';
+import List from '@mui/material/List';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemText from '@mui/material/ListItemText';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import Typography from '@mui/material/Typography';
+import Divider from '@mui/material/Divider';
+import Tooltip from '@mui/material/Tooltip';
+import { useTheme } from '@mui/material/styles';
+import MenuIcon from '@mui/icons-material/Menu';
+import TranslateIcon from '@mui/icons-material/Translate';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
 
+// Base nav link configuration
 const baseLinksRaw = [
   { href: '/', key: 'home' },
   { href: '/stake', key: 'stake' },
@@ -16,18 +36,15 @@ const baseLinksRaw = [
 export function NavBar() {
   const pathname = usePathname();
   const { t, locale, setLocale } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
+  const theme = useTheme();
 
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 6);
-    onScroll();
-    window.addEventListener('scroll', onScroll);
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const [isAdmin, setIsAdmin] = React.useState(false);
+  const [langMenuAnchor, setLangMenuAnchor] = React.useState<null | HTMLElement>(null);
+  const langMenuOpen = Boolean(langMenuAnchor);
+  const [modeStub, setModeStub] = React.useState<'dark' | 'light'>('dark'); // placeholder until real color mode toggle wired
 
-  const [isAdmin, setIsAdmin] = useState(false);
-  useEffect(() => {
+  React.useEffect(() => {
     try {
       const token = (globalThis as any).hyapiBearer as string | undefined;
       const persisted = typeof localStorage !== 'undefined' ? localStorage.getItem('adminMode') : null;
@@ -35,13 +52,13 @@ export function NavBar() {
     } catch {}
   }, []);
 
-  // Hotkey: Alt+Shift+A (avoid Chrome Ctrl+Shift+A conflict)
-  useEffect(() => {
+  // Hotkey: Alt+Shift+A to toggle admin mode (persist)
+  React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.altKey && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
         e.preventDefault();
         setIsAdmin(v => {
-          const next = !v; try { localStorage.setItem('adminMode', next ? '1':'0'); } catch {}
+          const next = !v; try { localStorage.setItem('adminMode', next ? '1' : '0'); } catch {}
           return next;
         });
       }
@@ -55,123 +72,186 @@ export function NavBar() {
     ? [...baseLinks, { href: '/admin', label: t('admin') }, { href: '/admin/alloc', label: t('allocation') }]
     : baseLinks;
 
+  const handleLangButton = (e: React.MouseEvent<HTMLElement>) => setLangMenuAnchor(e.currentTarget);
+  const closeLangMenu = () => setLangMenuAnchor(null);
+  const changeLocale = (loc: string) => { setLocale(loc as any); closeLangMenu(); };
+
+  const toggleModeStub = () => setModeStub(m => m === 'dark' ? 'light' : 'dark');
+
+  // Helper for active nav styling
+  const isActive = (href: string) => href === pathname;
+
   return (
-    <header className={clsx(
-      'sticky top-0 z-50 backdrop-blur transition-shadow text-slate-100',
-      scrolled ? 'bg-black/70 shadow-[0_2px_8px_-2px_rgba(0,0,0,0.4),0_1px_3px_rgba(0,0,0,0.2)]' : 'bg-black/40'
-    )}>
-      <div className="mx-auto max-w-screen-lg px-4 sm:px-6 flex h-14 items-center justify-between gap-4">
-        {/* Left: brand */}
-        <Link href="/" className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-md bg-brand-500" aria-hidden />
-          <span className="font-semibold tracking-tight">HyaPi</span>
-        </Link>
+    <AppBar
+      position="sticky"
+      elevation={0}
+      sx={{
+        backdropFilter: 'blur(12px)',
+        backgroundColor: 'rgba(15,15,16,0.72)',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+      }}
+    >
+      <Toolbar disableGutters sx={{ minHeight: 56 }}>
+        <Container maxWidth="lg" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}> 
+          {/* Left: brand & mobile menu */}
+          <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center' }}>
+            <IconButton
+              color="inherit"
+              aria-label={t('toggle_navigation')}
+              onClick={() => setDrawerOpen(true)}
+              size="large"
+            >
+              <MenuIcon />
+            </IconButton>
+          </Box>
+          <Box component={Link} href="/" sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', mr: 1 }}> 
+            <Box sx={{ width: 28, height: 28, bgcolor: 'primary.main', borderRadius: 1.5, mr: 1 }} aria-hidden />
+            <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: '-0.5px' }}>HyaPi</Typography>
+          </Box>
 
-        {/* Center: nav (md+) */}
-  <nav className="hidden md:flex items-center gap-1" aria-label="Main navigation">
-          {links.map((l) => {
-            const active = pathname === l.href;
-            return (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={clsx(
-                  'px-3 py-2 text-sm rounded-lg font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black/20 transition-colors',
-                  active
-                    ? 'bg-white/10 text-white shadow-inner'
-                    : 'text-white/70 hover:text-white hover:bg-white/10'
-                )}
-                aria-current={active ? 'page' : undefined}
-              >
-                {l.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* Right: actions */}
-        <div className="hidden md:flex items-center gap-3">
-          <label className="sr-only" htmlFor="lang-select">{t('language')}</label>
-          <select
-            id="lang-select"
-            value={locale}
-            onChange={(e)=>setLocale(e.target.value as any)}
-            className="bg-black/40 text-xs rounded-md border border-white/10 px-2 py-1 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60"
-            aria-label={t('language')}
-          >
-            <option value="en">EN</option>
-            <option value="es">ES</option>
-          </select>
-          <Link
-            href="/stake"
-            className="inline-flex items-center rounded-lg bg-brand-600/90 hover:bg-brand-500 px-4 h-9 text-sm font-semibold shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70"
-          >
-            {t('stake')}
-          </Link>
-          <Link href="/terms" className="text-sm text-white/70 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 rounded-md px-2 py-1">
-            {t('terms')}
-          </Link>
-        </div>
-
-        {/* Mobile hamburger */}
-        <button
-          className="md:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-white/80 hover:text-white hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60"
-          aria-label={t('toggle_navigation')}
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-800"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        </button>
-      </div>
-
-      {/* Mobile drawer */}
-      {open && (
-        <div className="md:hidden border-t border-white/10 bg-black/80 backdrop-blur">
-          <nav className="mx-auto max-w-screen-lg px-4 sm:px-6 py-3 flex flex-col gap-1" aria-label="Mobile navigation">
-            {links.map((l) => {
-              const active = pathname === l.href;
+          {/* Center nav (desktop) */}
+          <Box component="nav" aria-label="Main navigation" sx={{ display: { xs: 'none', md: 'flex' }, gap: 0.5, flex: 1 }}>
+            {links.map(link => {
+              const active = isActive(link.href);
               return (
-                <Link
-                  key={l.href}
-                  href={l.href}
-                  className={clsx(
-                    'px-3 py-2 rounded-lg text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 transition-colors',
-                    active ? 'bg-white/10 text-white' : 'text-white/70 hover:bg-white/10'
-                  )}
-                  onClick={() => setOpen(false)}
-                >
-                  {l.label}
-                </Link>
+                <Button
+                  key={link.href}
+                  component={Link}
+                  href={link.href}
+                  aria-current={active ? 'page' : undefined}
+                  size="small"
+                  sx={{
+                    px: 2.25,
+                    py: 1,
+                    borderRadius: 2,
+                    fontWeight: 500,
+                    fontSize: '0.85rem',
+                    color: active ? 'primary.contrastText' : 'text.secondary',
+                    backgroundColor: active ? 'primary.main' : 'transparent',
+                    '&:hover': {
+                      backgroundColor: active ? 'primary.main' : 'rgba(255,255,255,0.08)',
+                      color: 'text.primary'
+                    }
+                  }}
+                >{link.label}</Button>
               );
             })}
-            <div className="mt-3 flex flex-wrap gap-3 items-center">
-              <select
-                value={locale}
-                onChange={(e)=>setLocale(e.target.value as any)}
-                className="bg-black/40 text-xs rounded-md border border-white/10 px-2 py-1 text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60"
-                aria-label={t('language')}
+          </Box>
+
+          {/* Right actions (desktop) */}
+            <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 1.5 }}>
+              {/* Language menu stub */}
+              <Tooltip title={t('language')}>
+                <IconButton
+                  id="lang-btn"
+                  aria-controls={langMenuOpen ? 'lang-menu' : undefined}
+                  aria-haspopup="true"
+                  aria-expanded={langMenuOpen ? 'true' : undefined}
+                  onClick={handleLangButton}
+                  size="small"
+                  sx={{ bgcolor: 'rgba(255,255,255,0.08)', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}
+                >
+                  <TranslateIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Menu
+                id="lang-menu"
+                anchorEl={langMenuAnchor}
+                open={langMenuOpen}
+                onClose={closeLangMenu}
+                MenuListProps={{ 'aria-labelledby': 'lang-btn' }}
               >
-                <option value="en">EN</option>
-                <option value="es">ES</option>
-              </select>
-              <Link
+                {['en','es'].map(loc => (
+                  <MenuItem key={loc} selected={loc === locale} onClick={() => changeLocale(loc)}>{loc.toUpperCase()}</MenuItem>
+                ))}
+              </Menu>
+
+              {/* Color mode toggle stub */}
+              <Tooltip title="Toggle color mode (stub)">
+                <IconButton
+                  size="small"
+                  aria-label="toggle color mode"
+                  onClick={toggleModeStub}
+                  sx={{ bgcolor: 'rgba(255,255,255,0.08)', '&:hover': { bgcolor: 'rgba(255,255,255,0.15)' } }}
+                >
+                  {modeStub === 'dark' ? <Brightness7Icon fontSize="small" /> : <Brightness4Icon fontSize="small" />}
+                </IconButton>
+              </Tooltip>
+
+              <Button
+                component={Link}
                 href="/stake"
-                className="inline-flex items-center rounded-lg bg-brand-600/90 hover:bg-brand-500 px-4 h-9 text-sm font-semibold shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/70"
-                onClick={() => setOpen(false)}
+                variant="contained"
+                size="small"
+                sx={{
+                  borderRadius: 2,
+                  fontWeight: 600,
+                  textTransform: 'none'
+                }}
               >
                 {t('stake')}
-              </Link>
-              <Link
+              </Button>
+              <Button
+                component={Link}
                 href="/terms"
-                className="text-sm text-white/70 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/60 rounded-md px-2 py-1"
-                onClick={() => setOpen(false)}
+                size="small"
+                sx={{ color: 'text.secondary', '&:hover': { color: 'text.primary', backgroundColor: 'rgba(255,255,255,0.06)' } }}
               >
                 {t('terms')}
-              </Link>
-            </div>
-          </nav>
-        </div>
-      )}
-    </header>
+              </Button>
+            </Box>
+        </Container>
+      </Toolbar>
+
+      {/* Mobile Drawer */}
+      <Drawer
+        anchor="left"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        ModalProps={{ keepMounted: true }}
+        PaperProps={{ sx: { width: 260, backgroundColor: '#121214', color: 'text.primary' } }}
+      >
+        <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ width: 28, height: 28, bgcolor: 'primary.main', borderRadius: 1.5 }} aria-hidden />
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>HyaPi</Typography>
+        </Box>
+        <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+        <List component="nav" aria-label="Mobile navigation" sx={{ py: 1 }}>
+          {links.map(link => {
+            const active = isActive(link.href);
+            return (
+              <ListItemButton
+                key={link.href}
+                component={Link}
+                href={link.href}
+                selected={active}
+                onClick={() => setDrawerOpen(false)}
+                sx={{
+                  borderRadius: 1.5,
+                  mx: 1,
+                  my: 0.25,
+                  '&.Mui-selected': { backgroundColor: 'primary.main', '&:hover': { backgroundColor: 'primary.main' }, color: 'primary.contrastText' }
+                }}
+              >
+                <ListItemText primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: 500 }} primary={link.label} />
+              </ListItemButton>
+            );
+          })}
+        </List>
+        <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)' }} />
+        <Box sx={{ p: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Button size="small" variant="contained" component={Link} href="/stake" onClick={() => setDrawerOpen(false)} sx={{ flexGrow: 1, borderRadius: 2 }}>{t('stake')}</Button>
+          <Button size="small" component={Link} href="/terms" onClick={() => setDrawerOpen(false)} sx={{ color: 'text.secondary', flexGrow: 1 }}>{t('terms')}</Button>
+          <Box sx={{ width: '100%', display: 'flex', gap: 1 }}>
+            <IconButton aria-label={t('language')} onClick={handleLangButton} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.1)', '&:hover': { bgcolor: 'rgba(255,255,255,0.18)' } }}>
+              <TranslateIcon fontSize="small" />
+            </IconButton>
+            <IconButton aria-label="toggle color mode" onClick={toggleModeStub} size="small" sx={{ bgcolor: 'rgba(255,255,255,0.1)', '&:hover': { bgcolor: 'rgba(255,255,255,0.18)' } }}>
+              {modeStub === 'dark' ? <Brightness7Icon fontSize="small" /> : <Brightness4Icon fontSize="small" />}
+            </IconButton>
+          </Box>
+        </Box>
+      </Drawer>
+    </AppBar>
   );
 }

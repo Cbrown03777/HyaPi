@@ -15,12 +15,14 @@ import { portfolioRouter } from './web/portfolio';
 import { activityRouter } from './web/activity';
 import { piRouter } from './web/pi';
 import { metadataRouter } from './web/metadata';
-import { allocRouter } from './web/alloc';
+import { allocRouter, allocGovPublicRouter } from './web/alloc';
+import { allocCurrentRouter } from './web/alloc_current';
 import { venuesRouter } from './web/venues';
+import { walletRouter } from './web/wallet';
 
 import { auth } from './web/middleware/auth';
 import { idempotency } from './web/middleware/idempotency';
-import { ensurePiIntegration } from './services/bootstrap';
+import { ensurePiIntegration, ensureBootstrap } from './services/bootstrap';
 import { runMigrations } from './services/migrate';
 import { startPiPayoutWorker } from './services/piPayoutWorker';
 import { recordAllocationSnapshot } from './services/alloc';
@@ -66,6 +68,10 @@ app.use(helmet({contentSecurityPolicy: false}));
 app.use(express.json());
 app.use(cors(corsOptions));
 app.get('/health', (_req,res)=>res.json({ ok:true, time:new Date().toISOString() })); // public
+// Public venues rates and public alloc history before auth
+app.use('/v1/venues', venuesRouter);
+app.use('/v1/alloc', allocGovPublicRouter);
+// NOTE: /v1/venues mounted earlier (public). Everything after this requires auth.
 app.use(auth);
 app.use(idempotency);
 
@@ -97,20 +103,24 @@ app.use('/v1/gov', auth, proposalsRouter);
 app.use('/v1/gov', auth, votesRouter);
 app.use('/v1/gov', auth, finalizeRouter);
 app.use('/v1/gov/execution', auth, executeRouter);
+app.use('/v1/wallet', auth, walletRouter);
 app.use('/v1/stake', auth, stakingRouter);
 app.use('/v1/portfolio', auth, portfolioRouter);
 app.use('/v1/activity', auth, activityRouter);
 app.use('/v1/pi', auth, piRouter);
 app.use('/v1/metadata', metadataRouter);
 app.use('/v1/alloc', auth, allocRouter);
-app.use('/v1/venues', venuesRouter);
+app.use('/v1/alloc', auth, allocCurrentRouter);
+// Public venues rates (no bearer required) – mount before auth
+// (Already mounted publicly above)
 
 
 const port = Number(process.env.PORT ?? 8080);
 app.listen(port, async () => {
   console.log('gov api up');
   try { await runMigrations(); } catch (e:any) { console.error('migration error', e?.message); }
-  try { await ensurePiIntegration(); } catch (e: any) { console.error('bootstrap error', e?.message); }
+  try { await ensurePiIntegration(); } catch (e: any) { console.error('pi bootstrap error', e?.message); }
+  try { await ensureBootstrap(); } catch (e:any) { console.error('alloc bootstrap error', e?.message); }
   // Start background worker to track A2U payouts
   try { startPiPayoutWorker(); } catch (e: any) { console.error('payout worker start error', e?.message); }
 });

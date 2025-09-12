@@ -1,16 +1,20 @@
-export function SkeletonBar({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse animate-shimmer rounded-md bg-base-200 ${className}`} />
+import { Skeleton as MuiSkeleton, Card, CardContent, Stack } from '@mui/material';
+
+export function SkeletonBar({ width = '100%', height = 12 }: { width?: number | string; height?: number }) {
+  return <MuiSkeleton variant="rounded" width={width} height={height} animation="wave" />;
 }
 
 export function SkeletonCard({ lines = 3 }: { lines?: number }) {
   return (
-    <div className="rounded-xl2 border border-base-200 bg-white/70 p-4 shadow-card backdrop-blur">
-      <SkeletonBar className="h-4 w-2/5" />
-      <div className="mt-3 space-y-2">
-        {Array.from({ length: lines }).map((_, i) => (
-          <SkeletonBar key={i} className="h-3 w-full" />
-        ))}
-      </div>
-    </div>
-  )
+    <Card variant="outlined" sx={{ borderRadius: 3, backdropFilter: 'blur(8px)', background: 'linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0.10))' }}>
+      <CardContent>
+        <SkeletonBar width="40%" height={16} />
+        <Stack spacing={1} sx={{ mt: 2 }}>
+          {Array.from({ length: lines }).map((_, i) => (
+            <SkeletonBar key={i} height={12} />
+          ))}
+        </Stack>
+      </CardContent>
+    </Card>
+  );
 }

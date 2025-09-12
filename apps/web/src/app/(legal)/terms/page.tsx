@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { GOV_API_BASE } from '@hyapi/shared';
+import { Box, Typography, Paper, Stack } from '@mui/material';
 
 type LegalMeta = { terms_last_updated?: string } | null;
 
@@ -26,18 +27,20 @@ function TOC() {
     ['contact', '19) Contact'],
   ] as const;
   return (
-    <nav aria-label="Table of contents" className="text-sm">
-      <div className="mb-2 font-medium text-white/80">On this page</div>
-      <ul className="space-y-1">
+    <Box component="nav" aria-label="Table of contents" sx={{ fontSize: 13 }}>
+      <Typography variant="subtitle2" sx={{ mb: 1, opacity: 0.8 }}>On this page</Typography>
+      <Stack component="ul" spacing={0.5} sx={{ m:0, p:0, listStyle:'none' }}>
         {items.map(([id, title]) => (
-          <li key={id}>
-            <a href={`#${id}`} className="text-white/70 hover:text-white underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--acc)] rounded">
-              {title}
-            </a>
-          </li>
+          <Box key={id} component="li">
+            <Typography component={Link} href={`#${id}`} sx={{
+              color: 'text.secondary', textDecoration: 'none', fontSize: 13,
+              '&:hover': { color: 'text.primary', textDecoration: 'underline' },
+              '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', borderRadius: 1 }
+            }}>{title}</Typography>
+          </Box>
         ))}
-      </ul>
-    </nav>
+      </Stack>
+    </Box>
   );
 }
 
@@ -56,17 +59,17 @@ export default async function TermsPage() {
   const last = meta?.terms_last_updated ?? 'Sep 2025';
 
   return (
-    <div className="mx-auto max-w-screen-lg px-4 sm:px-6 py-6">
-      <h1 className="text-2xl sm:text-3xl font-semibold">HyaPi Terms of Service</h1>
-      <p className="mt-2 text-white/70">Last updated: {last}</p>
+    <Box>
+      <Typography variant="h4" fontWeight={600}>HyaPi Terms of Service</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Last updated: {last}</Typography>
 
-      <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-[240px_1fr]">
-        <div className="sm:sticky sm:top-24 h-max">
-          <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+      <Box sx={{ mt: 4, display: 'grid', gap: 4, gridTemplateColumns: { xs: '1fr', sm: '240px 1fr' } }}>
+        <Box sx={{ position: { sm: 'sticky' }, top: { sm: 96 }, alignSelf: 'start' }}>
+          <Paper variant="outlined" sx={{ p:2, borderRadius:2, background: 'linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0.10))' }}>
             <TOC />
-          </div>
-        </div>
-        <article className="prose prose-invert max-w-none">
+          </Paper>
+        </Box>
+        <Box component="article" sx={{ '& h2': { mt:4, mb:1.5, fontSize:20 }, '& h3': { mt:3, mb:1, fontSize:16 }, '& p': { mb:2, lineHeight:1.6 }, '& ul': { pl:3, mb:2 }, '& li': { mb:0.5 } }}>
           <section id="acceptance">
             <h2>1) Acceptance</h2>
             <p>By accessing or using HyaPi, you agree to these Terms and our Privacy Policy. If you don’t agree, don’t use HyaPi.</p>
@@ -177,10 +180,10 @@ export default async function TermsPage() {
           <section id="contact">
             <h2>19) Contact</h2>
             <p>[Legal name / entity], [address], [email].</p>
-            <p className="mt-4 text-sm text-white/60">See also: <Link href="/privacy" className="underline">Privacy Policy</Link></p>
+            <p style={{ marginTop: '1rem', fontSize: 14, color: 'rgba(255,255,255,0.6)' }}>See also: <Link href="/privacy" className="underline">Privacy Policy</Link></p>
           </section>
-        </article>
-      </div>
-    </div>
+        </Box>
+      </Box>
+    </Box>
   );
 }

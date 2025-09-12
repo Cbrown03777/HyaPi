@@ -1,5 +1,5 @@
-'use client'
-import clsx from 'clsx'
+"use client";
+import { Chip } from '@mui/material';
 
 type Tone = 'neutral' | 'primary' | 'accent' | 'success' | 'warn' | 'danger'
 
@@ -11,27 +11,27 @@ type Props = {
   ariaLabel?: string
 }
 
-const toneStyles: Record<Tone, string> = {
-  neutral: 'border-white/20 bg-white/10 text-[var(--fg2)]',
-  primary: 'border-[color:var(--pri)]/40 bg-[color:var(--pri)]/15 text-[var(--fg)]',
-  accent: 'border-[color:var(--acc)]/40 bg-[color:var(--acc)]/15 text-[var(--fg)]',
-  success: 'border-[color:var(--success)]/40 bg-[color:var(--success)]/15 text-[var(--fg)]',
-  warn: 'border-[color:var(--warn)]/40 bg-[color:var(--warn)]/15 text-[var(--fg)]',
-  danger: 'border-[color:var(--danger)]/40 bg-[color:var(--danger)]/15 text-[var(--fg)]',
-}
+const toneMap: Record<Tone, { color: 'default' | 'primary' | 'success' | 'warning' | 'error'; variant: 'outlined' | 'filled' }> = {
+  neutral: { color: 'default', variant: 'outlined' },
+  primary: { color: 'primary', variant: 'outlined' },
+  accent: { color: 'primary', variant: 'filled' },
+  success: { color: 'success', variant: 'filled' },
+  warn: { color: 'warning', variant: 'filled' },
+  danger: { color: 'error', variant: 'filled' },
+};
 
-export function Badge({ tone = 'neutral', className, children, icon, ariaLabel }: Props) {
+export function Badge({ tone = 'neutral', className = '', children, icon, ariaLabel }: Props) {
+  const t = toneMap[tone];
   return (
-    <span
-      className={clsx(
-        'inline-flex select-none items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
-        toneStyles[tone],
-        className,
-      )}
-      aria-label={ariaLabel}
-    >
-      {icon ? <span aria-hidden>{icon}</span> : null}
-      {children}
-    </span>
-  )
+    <Chip
+      size="small"
+      label={children}
+      icon={icon as any}
+      color={t.color}
+      variant={t.variant}
+      aria-label={ariaLabel || undefined}
+      sx={{ fontSize: 11, height: 22, '& .MuiChip-label': { px: 1 } }}
+      className={className}
+    />
+  );
 }

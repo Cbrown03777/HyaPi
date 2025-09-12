@@ -9,7 +9,8 @@ export const venuesRouter = Router();
 const connectors = [
 	{ name: 'aave',     getRates: () => aaveConnector.getLiveRates(['USDT','USDC','DAI','AUSD']) },
 	{ name: 'justlend', getRates: () => justlendConnector.getLiveRates(['USDT','USDD']) },
-	{ name: 'stride',   getRates: () => strideConnector.getLiveRates(['stATOM','stTIA']) },
+	// Include all currently supported Stride liquid staking tokens (env APR fallbacks in connector)
+	{ name: 'stride',   getRates: () => strideConnector.getLiveRates(['stATOM','stTIA','stJUNO','stLUNA','stBAND']) },
 ] as const;
 
 // Simple helper to enforce a timeout on a promise

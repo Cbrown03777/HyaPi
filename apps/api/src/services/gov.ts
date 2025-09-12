@@ -55,7 +55,8 @@ export async function getCompositeRates(): Promise<Rate[]> {
   const [a, j, s] = await Promise.all([
     aave.getLiveRates(['USDT','USDC','DAI']).catch(()=>[]),
     justlend.getLiveRates(['USDT','USDD']).catch(()=>[]),
-    stride.getLiveRates(['stATOM','stTIA']).catch(()=>[])
+    // Include all Stride markets we allocate to so APYs are available
+    stride.getLiveRates(['stATOM','stTIA','stJUNO','stLUNA','stBAND']).catch(()=>[])
   ]);
   return [...a, ...j, ...s];
 }

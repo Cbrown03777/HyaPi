@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import type { PoolClient } from 'pg';
 import { db, withTx } from '../services/db';
-import { setGovTargets } from '../services/alloc';
+import { setOverrideTargets } from '../services/alloc';
 
 export const executeRouter = Router();
 
@@ -40,8 +40,8 @@ executeRouter.post('/:id', async (req: Request, res: Response) => {
     }
 
     // Fetch the proposal's target allocation
-    const a = await db.query<{ chain: string; weight_fraction: number }>(
-      `SELECT chain, weight_fraction
+    const a = await db.query<{ key: string; weight_fraction: number }>(
+      `SELECT key, weight_fraction
          FROM gov_proposal_allocations
         WHERE proposal_id=$1`,
       [id]
@@ -52,25 +52,21 @@ executeRouter.post('/:id', async (req: Request, res: Response) => {
 
     // Apply allocation + mark executed in one tx
     const applied = await withTx(async (tx: PoolClient) => {
-      // Upsert allocations_current
+      // Normalize weights (defensive) and write into allocation_targets with source='gov'
+  const total = a.rows.reduce((s,r)=> s + Number(r.weight_fraction||0), 0) || 1;
+      await tx.query(`DELETE FROM allocation_targets WHERE source='gov'`);
       for (const r of a.rows) {
+        const w = Number(r.weight_fraction||0)/total;
         await tx.query(
-          `INSERT INTO allocations_current (chain, weight_fraction)
-           VALUES ($1, $2)
-           ON CONFLICT (chain) DO UPDATE
-             SET weight_fraction = EXCLUDED.weight_fraction,
-                 updated_at = now()`,
-          [r.chain, r.weight_fraction]
+          `INSERT INTO allocation_targets(key, weight_fraction, source, applied_at)
+           VALUES ($1,$2,'gov', now())`, [r.key, w]
         );
       }
-
-      // Optional: write to history (skip if you don't have table)
-       await tx.query(
-         `INSERT INTO allocations_history (proposal_id, chain, weight_fraction, executed_at)
-          SELECT $1, chain, weight_fraction, now() FROM gov_proposal_allocations WHERE proposal_id=$1`,
-         [id]
-       );
-
+      // Record history snapshot of this governance execution
+      for (const r of a.rows) {
+        await tx.query(`INSERT INTO gov_allocation_history(proposal_id, key, weight_fraction, normalization) VALUES ($1,$2,$3,$4)`,
+          [id, r.key, r.weight_fraction, total]);
+      }
       const upd = await tx.query(
         `UPDATE gov_proposals
             SET status='executed',
@@ -82,17 +78,6 @@ executeRouter.post('/:id', async (req: Request, res: Response) => {
       );
       return { proposal: upd.rows[0], applied: a.rows };
     });
-
-    // After legacy allocations_current upserts, also persist unified gov targets via mapping
-    const chainToVenue: Record<string,string> = { sui:'aave:USDT', aptos:'justlend:USDT', cosmos:'stride:stATOM' };
-    const unified: Record<string, number> = {};
-    for (const r of applied.applied) {
-      const key = chainToVenue[r.chain];
-      if (key) unified[key] = r.weight_fraction;
-    }
-    if (Object.keys(unified).length) {
-      try { await setGovTargets(unified); } catch(e:any){ console.warn('setGovTargets failed', e?.message); }
-    }
 
     const body = {
       success: true,

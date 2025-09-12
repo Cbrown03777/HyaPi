@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Box } from '@mui/material'
 
 export function PiBanner() {
   const [hasPi, setHasPi] = useState<boolean>(true)
@@ -10,10 +11,10 @@ export function PiBanner() {
   }, [])
   if (hasPi) return null
   return (
-    <div role="note" className="border-b border-yellow-600/30 bg-yellow-600/10 text-yellow-100">
-      <div className="mx-auto max-w-screen-lg px-4 sm:px-6 py-2 text-sm">
+    <Box role="note" sx={{ borderBottom: '1px solid rgba(234,179,8,0.3)', bgcolor: 'rgba(234,179,8,0.10)', color: 'rgba(255,234,160,0.95)' }}>
+      <Box sx={{ mx: 'auto', maxWidth: 'lg', px: { xs: 2, sm: 3 }, py: 1, fontSize: 14 }}>
         Open in Pi Browser to use payments.
-      </div>
-    </div>
+      </Box>
+    </Box>
   )
 }

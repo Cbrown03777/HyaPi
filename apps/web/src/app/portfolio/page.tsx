@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { GOV_API_BASE } from '@hyapi/shared'
 import { signInWithPi } from '@/lib/pi'
 import { StatCard } from '@/components/StatCard'
-import { Card as UiCard } from '@/components/ui/Card'
+import { Card } from '@/components/Card'
+import { Box, Typography, Table, TableHead, TableRow, TableCell, TableBody, Chip } from '@mui/material'
 import { useActivity } from '@/components/ActivityProvider'
 import { fmtNumber, fmtPercent, fmtCompact } from '@/lib/format'
 
@@ -54,73 +55,69 @@ export default function PortfolioPage() {
   }, [series])
 
   return (
-    <div className="mx-auto max-w-screen-lg px-4 sm:px-6 py-6">
-  <h2 className="text-xl sm:text-2xl font-semibold leading-tight">Your Portfolio</h2>
+    <Box sx={{ mx: 'auto', maxWidth: 'lg', px: { xs: 2, sm: 3 }, py: 4 }}>
+      <Typography variant="h5" fontWeight={600} gutterBottom>Your Portfolio</Typography>
 
-      {/* Stats row */}
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-  <StatCard label="hyaPi balance" value={`${(hyapi ?? 0) >= 10000 ? fmtCompact(hyapi ?? 0) : fmtNumber(hyapi)} hyaPi`} tone="primary" />
-  <StatCard label="Estimated Pi value" value={`${(piValue ?? 0) >= 10000 ? fmtCompact(piValue ?? 0) : fmtNumber(piValue)} Pi`} tone="accent" />
+      <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, mt: 0.5 }}>
+        <StatCard label="hyaPi balance" value={`${(hyapi ?? 0) >= 10000 ? fmtCompact(hyapi ?? 0) : fmtNumber(hyapi)} hyaPi`} tone="primary" />
+        <StatCard label="Estimated Pi value" value={`${(piValue ?? 0) >= 10000 ? fmtCompact(piValue ?? 0) : fmtNumber(piValue)} Pi`} tone="accent" />
         <StatCard
           label="Growth vs Pi"
-          value={fmtPercent((pps - 1) * 100, 2, { sign: true })}
-          hint="Computed as (PPS ÷ 1.0 − 1) × 100. PPS represents Pi per 1 hyaPi."
-          {...(dailyDeltaPct == null
-            ? {}
-            : { sub: `${dailyDeltaPct >= 0 ? '▲' : '▼'} ${fmtPercent(Math.abs(dailyDeltaPct))} since last` })}
+            value={fmtPercent((pps - 1) * 100, 2, { sign: true })}
+            hint="Computed as (PPS ÷ 1.0 − 1) × 100. PPS represents Pi per 1 hyaPi."
+            {...(dailyDeltaPct == null
+              ? {}
+              : { sub: `${dailyDeltaPct >= 0 ? '▲' : '▼'} ${fmtPercent(Math.abs(dailyDeltaPct))} since last` })}
         />
-      </div>
+      </Box>
 
-      {/* Allocation placeholder */}
-      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <UiCard className="p-0">
-          <div className="bg-gradient-to-r from-white/10 to-transparent px-4 py-2 text-xs text-white/70">Allocation</div>
-          <div className="p-4 text-sm text-white/80">
+      <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, mt: 1 }}>
+        <Card>
+          <Box sx={{ px: 2.5, py: 1.25, background: 'linear-gradient(90deg, rgba(255,255,255,0.08), transparent)' }}>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>Allocation</Typography>
+          </Box>
+          <Box sx={{ p: 2.5, pt: 1.5, typography: 'body2', color: 'rgba(255,255,255,0.8)' }}>
             Allocation data isn’t available yet. Governance proposals will define target weights across chains.
-          </div>
-        </UiCard>
-
-        {/* Activity table */}
-        <UiCard className="p-0 overflow-hidden">
-          <div className="bg-gradient-to-r from-[color:var(--pri)]/20 to-transparent px-4 py-2 text-xs text-white/70">Recent activity</div>
-          <div className="p-2 overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-white/70">
-                  <th scope="col" className="px-3 py-2">When</th>
-                  <th scope="col" className="px-3 py-2">Type</th>
-                  <th scope="col" className="px-3 py-2">Detail</th>
-                  <th scope="col" className="px-3 py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10">
-                {items.slice(0, 10).map((e) => (
-                  <tr key={e.id} className="text-white/90">
-                    <td className="px-3 py-2 whitespace-nowrap text-white/70">{new Date(e.ts).toLocaleString()}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">{e.kind}</td>
-                    <td className="px-3 py-2">{e.title}{e.detail ? ` — ${e.detail}` : ''}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      <span className={
-                        'inline-flex rounded-md px-2 py-0.5 text-xs ' +
-                        (e.status === 'success'
-                          ? 'bg-[color:var(--success)]/20 text-[color:var(--success)]'
-                          : e.status === 'error'
-                          ? 'bg-[color:var(--danger)]/20 text-[color:var(--danger)]'
-                          : 'bg-white/20 text-white/90')
-                      }>{e.status}</span>
-                    </td>
-                  </tr>
-                ))}
+          </Box>
+        </Card>
+        <Card>
+          <Box sx={{ px: 2.5, py: 1.25, background: 'linear-gradient(90deg, rgba(123,140,255,0.25), transparent)' }}>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>Recent activity</Typography>
+          </Box>
+          <Box sx={{ p: 1.25, pt: 0.5 }}>
+            <Table size="small" sx={{ '& th, & td': { border: 0 } }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>When</TableCell>
+                  <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>Type</TableCell>
+                  <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>Detail</TableCell>
+                  <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>Status</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {items.slice(0, 10).map(e => {
+                  const color = e.status === 'success' ? 'success' : e.status === 'error' ? 'error' : 'default'
+                  return (
+                    <TableRow key={e.id} sx={{ '&:last-child td': { pb: 1.5 } }}>
+                      <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{new Date(e.ts).toLocaleString()}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13 }}>{e.kind}</TableCell>
+                      <TableCell sx={{ fontSize: 13 }}>{e.title}{e.detail ? ` — ${e.detail}` : ''}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                        <Chip label={e.status} size="small" color={color as any} variant={color === 'default' ? 'outlined' : 'filled'} sx={{ fontSize: 11, height: 22 }} />
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
                 {!items.length && (
-                  <tr>
-                    <td className="px-3 py-3 text-white/60" colSpan={4}>No recent activity.</td>
-                  </tr>
+                  <TableRow>
+                    <TableCell colSpan={4} sx={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>No recent activity.</TableCell>
+                  </TableRow>
                 )}
-              </tbody>
-            </table>
-          </div>
-        </UiCard>
-      </div>
-    </div>
+              </TableBody>
+            </Table>
+          </Box>
+        </Card>
+      </Box>
+    </Box>
   )
 }

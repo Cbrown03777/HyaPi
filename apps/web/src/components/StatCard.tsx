@@ -1,33 +1,32 @@
-import { Card } from './Card'
+"use client";
+import React from 'react';
+import { Card, CardContent, Box, Typography, Tooltip } from '@mui/material';
 
-type Props = { label: string; value: string; sub?: string; tone?: 'primary' | 'accent' | 'base'; hint?: string }
-export function StatCard({ label, value, sub, tone='base', hint }: Props) {
-  const headerTint =
-    tone === 'primary'
-      ? 'from-[color:var(--pri)]/20 to-transparent'
-      : tone === 'accent'
-      ? 'from-[color:var(--acc)]/20 to-transparent'
-      : 'from-white/10 to-transparent'
+type Props = { label: string; value: string; sub?: string; tone?: 'primary' | 'accent' | 'base'; hint?: string };
+
+export function StatCard({ label, value, sub, tone = 'base', hint }: Props) {
+  const gradient = tone === 'primary'
+    ? (theme:any)=>`linear-gradient(90deg, ${theme.palette.primary.main}22, transparent)`
+    : tone === 'accent'
+    ? (theme:any)=>`linear-gradient(90deg, ${theme.palette.secondary?.main || theme.palette.primary.light}22, transparent)`
+    : (theme:any)=>`linear-gradient(90deg, ${theme.palette.grey[500]}33, transparent)`;
+
   return (
-    <Card className="overflow-hidden p-0">
-      <div className={"bg-gradient-to-r px-4 py-2 text-xs text-white/70 " + headerTint}>
-        <div className="flex items-center gap-1">
-          <span>{label}</span>
+    <Card variant="outlined" sx={{ display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <Box px={2} py={1} sx={(theme)=>({ background: gradient(theme), borderBottom:`1px solid ${theme.palette.divider}` })}>
+        <Box display="flex" alignItems="center" gap={0.75}>
+          <Typography variant="caption" sx={{ opacity:0.8 }}>{label}</Typography>
           {hint && (
-            <span
-              className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full border border-white/20 text-[10px] text-white/70 hover:text-white/90 hover:border-white/40 cursor-help"
-              title={hint}
-              aria-label={hint}
-            >
-              i
-            </span>
+            <Tooltip title={hint} arrow>
+              <Box component="span" aria-label={hint} sx={{ width:16, height:16, display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:10, border:'1px solid', borderColor:'divider', borderRadius:'50%', cursor:'help', opacity:0.7 }}>i</Box>
+            </Tooltip>
           )}
-        </div>
-      </div>
-      <div className="p-4">
-        <div className="mt-1 text-xl font-semibold text-[var(--fg)] tabular-nums">{value}</div>
-        {sub && <div className="mt-0.5 text-xs text-white/60">{sub}</div>}
-      </div>
+        </Box>
+      </Box>
+      <CardContent sx={{ pt:2, pb:2 }}> 
+        <Typography variant="h6" fontWeight={600} sx={{ fontVariantNumeric:'tabular-nums' }}>{value}</Typography>
+        {sub && <Typography variant="caption" sx={{ mt:0.5, display:'block', opacity:0.7 }}>{sub}</Typography>}
+      </CardContent>
     </Card>
-  )
+  );
 }

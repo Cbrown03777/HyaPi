@@ -1,11 +1,5 @@
 import axios from 'axios';
-import StellarSdk, {
-  TransactionBuilder,
-  Operation,
-  Asset,
-  Memo,
-  Keypair,
-} from 'stellar-sdk';
+import * as StellarSdk from 'stellar-sdk';
 
 type CreateA2UInput = {
   uid: string;
@@ -73,23 +67,23 @@ export async function createA2U({ uid, amount, memo, metadata }: CreateA2UInput)
   const timebounds = await server.fetchTimebounds(180);
 
   // 3) Build transaction with memo=identifier
-  const op = Operation.payment({
+  const op = StellarSdk.Operation.payment({
     destination: recipient,
-    asset: Asset.native(),
+    asset: StellarSdk.Asset.native(),
     amount: formatAmount(amount),
   });
-  let tx = new TransactionBuilder(account, {
+  let tx = new StellarSdk.TransactionBuilder(account, {
     fee: baseFee.toString(),
     networkPassphrase,
     timebounds,
   })
     .addOperation(op)
-    .addMemo(Memo.text(identifier))
+    .addMemo(StellarSdk.Memo.text(identifier))
     .setTimeout(180)
     .build();
 
   // 4) Sign & submit
-  const keypair = Keypair.fromSecret(APP_SECRET);
+  const keypair = StellarSdk.Keypair.fromSecret(APP_SECRET);
   tx.sign(keypair);
   const submitRes = await server.submitTransaction(tx);
   const txid: string = (submitRes as any)?.id || (submitRes as any)?.hash || tx.hash().toString('hex');

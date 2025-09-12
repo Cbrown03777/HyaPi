@@ -1,5 +1,5 @@
-'use client'
-import clsx from 'clsx'
+"use client";
+import { Box } from '@mui/material';
 
 type Segment = { value: number; tone?: 'primary' | 'danger' | 'neutral' }
 
@@ -17,20 +17,15 @@ export function Progress({ segments, label, className }: Props) {
     const left = acc
     acc += pct
     const tone = seg.tone ?? 'neutral'
-    const color = tone === 'primary' ? 'bg-[color:var(--acc)]' : tone === 'danger' ? 'bg-[color:var(--danger)]' : 'bg-white/20'
+    const color = tone === 'primary' ? 'primary.main' : tone === 'danger' ? 'error.main' : 'rgba(255,255,255,0.2)'
     return (
-      <div
-        key={i}
-        className={clsx('absolute top-0 h-full rounded-full transition-[width] duration-500 ease-out motion-reduce:transition-none', color)}
-        style={{ left: `${left}%`, width: `${pct}%` }}
-        aria-hidden
-      />
+      <Box key={i} aria-hidden sx={{ position: 'absolute', top: 0, left: `${left}%`, width: `${pct}%`, height: '100%', borderRadius: 999, transition: 'width .5s ease-out', bgcolor: color }} />
     )
   })
 
   return (
-    <div className={clsx('relative h-2 w-full overflow-hidden rounded-full bg-white/10', className)} role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100}>
+    <Box className={className} role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} sx={{ position: 'relative', height: 8, width: '100%', overflow: 'hidden', borderRadius: 999, background: 'rgba(255,255,255,0.1)' }}>
       {bars}
-    </div>
+    </Box>
   )
 }

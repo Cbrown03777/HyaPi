@@ -88,6 +88,8 @@ finalizeRouter.post('/:id/finalize', async (req: Request, res: Response) => {
       return upd.rows[0];
     });
 
+
+
     const body = {
       success: true,
       data: {

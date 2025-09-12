@@ -1,96 +1,127 @@
-'use client';
-import { useEffect, useRef, useState } from 'react';
+"use client";
+import { useEffect, useState } from 'react';
 import { GOV_API_BASE } from '@hyapi/shared';
+import axios from 'axios';
 import { signInWithPi } from '@/lib/pi';
-import { Button } from '@/components/Button';
-import { NumberWithSlider } from '@/components/NumberWithSlider';
-import { LockupSlider } from '@/components/LockupSlider';
 import { useToast } from '@/components/ToastProvider';
 import { useActivity } from '@/components/ActivityProvider';
 import { ActivityPanel } from '@/components/ActivityPanel';
-import { Card } from '@/components/ui/Card';
 import { fmtNumber, fmtCompact } from '@/lib/format';
-import axios from 'axios';
-import { fmtPercent } from '@/lib/format';
+import {
+  Box,
+  Card,
+  CardHeader,
+  CardContent,
+  Typography,
+  TextField,
+  Slider,
+  ToggleButtonGroup,
+  ToggleButton,
+  Switch,
+  FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Alert,
+  Stack,
+  Divider,
+  Paper,
+  Tooltip,
+  Chip
+} from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+
+// Stake Page (MUI refactor)
 
 export default function StakePage() {
-  const [token, setToken] = useState<string>('');
-  const [amt, setAmt] = useState<number>(100);
-  const [weeks, setWeeks] = useState<number>(0);
-  // dynamic APY base fetched from allocation summary (net & gross)
-  const [baseNetApy, setBaseNetApy] = useState<number>(0); // decimal
-  const [baseGrossApy, setBaseGrossApy] = useState<number>(0);
-  const [showGross, setShowGross] = useState(false);
-  const [lockCurve, setLockCurve] = useState<Array<{ weeks:number; share:number }>>([]);
-  const [apyBps, setApyBps] = useState<number>(500); // derived for backward compatibility
+  // State
+  const [token, setToken] = useState('');
+  const [amt, setAmt] = useState(100);
+  const [weeks, setWeeks] = useState(0);
+  const [baseNetApy, setBaseNetApy] = useState(0); // decimal
+  const [baseGrossApy, setBaseGrossApy] = useState(0);
+  const [emaNetApy, setEmaNetApy] = useState<number | null>(null);
+  const [showGross, setShowGross] = useState<boolean>(() => (typeof window !== 'undefined' && localStorage.getItem('stakeShowGross') === '1'));
+  const [lockCurve, setLockCurve] = useState<Array<{ weeks: number; share: number }>>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [balance, setBalance] = useState<number>(1000); // will update from API when available
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [balance, setBalance] = useState<number>(1000);
   const toast = useToast();
   const activity = useActivity();
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
+  // Load auth, balances, APYs, curve
   useEffect(() => {
     (async () => {
       const maybe = await signInWithPi();
-      setToken(typeof maybe === 'string' ? maybe : (maybe as any)?.accessToken ?? '');
-  const t = typeof maybe === 'string' ? maybe : (maybe as any)?.accessToken ?? '';
-  if (t) (globalThis as any).hyapiBearer = t;
-      // Try to fetch available Pi balance (optional; backend may not expose yet)
+      const t = typeof maybe === 'string' ? maybe : (maybe as any)?.accessToken ?? '';
+      setToken(t);
+      if (t) (globalThis as any).hyapiBearer = t;
+      // Fetch balance (optional)
       try {
-        // Preferred endpoint if/when available
         const res1 = await fetch(`${GOV_API_BASE}/v1/wallet/balance`, { headers: { Authorization: `Bearer ${t}` } });
         if (res1.ok) {
           const j1 = await res1.json();
-          const b1 = (j1?.data?.pi_balance ?? j1?.data?.balance ?? j1?.pi_balance ?? j1?.balance);
-          const v1 = typeof b1 === 'string' ? Number(b1) : typeof b1 === 'number' ? b1 : NaN;
-          if (Number.isFinite(v1) && v1 >= 0) setBalance(v1);
-        } else if (res1.status === 404) {
-          // In dev, assume ample Pi balance to enable flow
-          if (t.startsWith('dev ')) {
-            setBalance(1_000_000);
-          } else {
-            // fallback: leave existing default
-          }
+          const raw = (j1?.data?.pi_balance ?? j1?.data?.balance ?? j1?.pi_balance ?? j1?.balance);
+          const v = typeof raw === 'string' ? Number(raw) : typeof raw === 'number' ? raw : NaN;
+          if (Number.isFinite(v) && v >= 0) setBalance(v);
+        } else if (res1.status === 404 && t.startsWith('dev ')) {
+          setBalance(1_000_000);
         }
-      } catch {
-        // keep placeholder; non-fatal
-      }
-      // load allocation summary (gross+net) & lock curve
+      } catch { /* silent */ }
+      // Fetch allocation summary + lock curve
       try {
-        const ax = axios.create({ baseURL: GOV_API_BASE, headers: { Authorization: `Bearer ${t}` } });
-        const [sumRes, curveRes] = await Promise.all([
-          ax.get('/v1/alloc/summary'),
-          ax.get('/v1/alloc/lock-curve')
+        const client = axios.create({ baseURL: GOV_API_BASE, headers: { Authorization: `Bearer ${t}` } });
+        const [sumRes, curveRes] = await Promise.allSettled([
+          client.get('/v1/alloc/summary'),
+          client.get('/v1/alloc/lock-curve')
         ]);
-        if (sumRes.data?.success) {
-          setBaseNetApy(sumRes.data.data?.totalNetApy || 0);
-          setBaseGrossApy(sumRes.data.data?.totalGrossApy || 0);
+        // Fetch EMA separately so we can display same net APY as home
+        try {
+          const emaRes = await client.get('/v1/alloc/ema');
+          if (emaRes?.data?.success) setEmaNetApy(emaRes.data.data?.ema7 ?? emaRes.data.data?.latest ?? null);
+        } catch {}
+        if (sumRes.status === 'fulfilled' && sumRes.value.data?.success) {
+          setBaseNetApy(sumRes.value.data.data?.totalNetApy || 0);
+          setBaseGrossApy(sumRes.value.data.data?.totalGrossApy || 0);
         }
-        if (curveRes.data?.success) setLockCurve(curveRes.data.data);
-      } catch {}
+        if (curveRes.status === 'fulfilled' && curveRes.value.data?.success) {
+          setLockCurve(curveRes.value.data.data || []);
+        }
+      } catch { /* silent */ }
     })();
   }, []);
 
-  // lock share curve from server (piecewise step)
+  // lock share curve from server (piecewise step) with fallback defaults if absent yet
   const lockScale = (w: number) => {
-    if (!lockCurve || lockCurve.length === 0) return 0;
-    let share = lockCurve[0]?.share ?? 0;
-    for (const pt of lockCurve) { if (w >= pt.weeks) share = pt.share; else break; }
-    return share;
+    if (lockCurve && lockCurve.length) {
+      let s = lockCurve[0]?.share ?? 0;
+      for (const pt of lockCurve) {
+        if (w >= pt.weeks) s = pt.share; else break;
+      }
+      return s;
+    }
+    if (w >= 104) return 0.90;
+    if (w >= 52) return 0.80;
+    if (w >= 26) return 0.70;
+    if (w >= 3) return 0.60;
+    return 0.50;
   };
   const baseDisplayed = showGross ? baseGrossApy : baseNetApy;
   const userScaledApy = baseDisplayed * lockScale(weeks);
-  useEffect(()=> { setApyBps(Math.round(userScaledApy * 10000)); }, [userScaledApy]);
+  // (Removed incremental delta display; only showing absolute APY now)
+  const baselineApy = baseDisplayed * lockScale(0);
+  // Platform Net APY (smoothed to match Home when available)
+  const platformNetApy = emaNetApy ?? baseNetApy; // decimal
 
   async function submit() {
     setMsg(null);
     setBusy(true);
-  const opId = crypto.randomUUID();
-  activity.log({ id: opId, kind: 'stake', title: `Staking ${fmtCompact(amt)} Pi`, detail: `lock ${weeks}w`, status: 'in-flight' });
+    const opId = crypto.randomUUID();
+    activity.log({ id: opId, kind: 'stake', title: `Staking ${fmtCompact(amt)} Pi`, detail: `lock ${weeks}w`, status: 'in-flight' });
     try {
-      // If running in Pi Browser, request a U2A payment; otherwise fallback to dev deposit
       const Pi = (globalThis as any).Pi;
       if (Pi && token && !token.startsWith('dev ')) {
         const paymentData = { amount: amt, memo: 'HyaPi stake deposit', metadata: { lockupWeeks: weeks } };
@@ -109,15 +140,14 @@ export default function StakePage() {
           onError: (error: any, paymentId: string) => console.error('payment error', error, paymentId),
         };
         await Pi.createPayment(paymentData, callbacks);
-        const m = `✅ Payment submitted. You'll see your stake reflected after completion.`;
+        const m = `Payment submitted. You'll see your stake after completion.`;
         setMsg(m);
         toast.success(m);
         activity.log({ id: opId, kind: 'stake', title: `Payment started ${fmtCompact(amt)} Pi`, detail: `lock ${weeks}w`, status: 'success' });
       } else {
-        // Dev fallback: directly call deposit endpoint
         const res = await fetch(`${GOV_API_BASE}/v1/stake/deposit`, {
           method: 'POST',
-          headers: {
+            headers: {
             'Content-Type': 'application/json',
             'Idempotency-Key': crypto.randomUUID(),
             Authorization: `Bearer ${token}`,
@@ -127,200 +157,232 @@ export default function StakePage() {
         if (res.status >= 500) toast.error('Network error. Please try again.');
         const j = await res.json();
         if (!res.ok || j?.success === false) throw new Error(j?.error?.message || 'Stake failed');
-        const m = `✅ Staked ${fmtCompact(amt)} Pi (lock ${weeks}w). Stake id: ${j.data?.stake?.id}`
+        const m = `Staked ${fmtCompact(amt)} Pi (lock ${weeks}w). Stake id: ${j.data?.stake?.id}`;
         setMsg(m);
         toast.success(m);
         activity.log({ id: opId, kind: 'stake', title: `Staked ${fmtCompact(amt)} Pi`, detail: `lock ${weeks}w`, status: 'success' });
       }
     } catch (e: any) {
-  const m = `❌ ${e.message}`
-  setMsg(m);
-  toast.error(m);
-  activity.log({ id: opId, kind: 'stake', title: 'Stake failed', detail: e.message, status: 'error' });
+      const m = e.message ? `Error: ${e.message}` : 'Stake failed';
+      setMsg(m);
+      toast.error(m);
+      activity.log({ id: opId, kind: 'stake', title: 'Stake failed', detail: e.message, status: 'error' });
     } finally {
       setBusy(false);
     }
   }
 
   // simple client-side estimate: linear APY pro-rated by weeks; hyaPi minted 1:1 + yield
-  const apy = userScaledApy; // already decimal
-  // Pro-rate simple interest for preview (could switch to daily compounding for >8% accuracy)
+  const apy = userScaledApy; // decimal
   const estFinal = amt * (1 + apy * (weeks / 52));
   const isDev = token.startsWith('dev ');
   const invalidReason = !Number.isFinite(amt) || amt <= 0
     ? 'Enter an amount greater than 0'
     : (!isDev && amt > balance)
-    ? 'Amount exceeds available balance'
-    : '';
+      ? 'Amount exceeds available balance'
+      : '';
 
-  // Focus trap for preview modal
-  useEffect(() => {
-    if (!showPreview) return;
-    const root = dialogRef.current;
-    if (!root) return;
-    const selectors = 'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const focusables = Array.from(root.querySelectorAll<HTMLElement>(selectors)).filter(el => !el.hasAttribute('disabled'));
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    first?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setShowPreview(false);
-      } else if (e.key === 'Tab' && focusables.length) {
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last?.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first?.focus();
-        }
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [showPreview]);
+  const lockMarks = [
+    { value: 0, label: '0w' },
+    { value: 3, label: '3w' },
+    { value: 26, label: '26w' },
+    { value: 52, label: '52w' },
+    { value: 104, label: '104w' }
+  ];
+
+  const quickPercents = [25, 50, 75, 100];
 
   return (
-    <div className="mx-auto max-w-screen-lg px-4 sm:px-6 py-6">
-  <h2 className="text-xl sm:text-2xl font-semibold leading-tight">Stake Pi → receive hyaPi (1:1)</h2>
+    <Box maxWidth="lg" mx="auto" px={{ xs: 2, sm: 4 }} py={4}>
+      <Typography variant="h5" fontWeight={600} gutterBottom>
+        Stake Pi → receive hyaPi (1:1)
+      </Typography>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {/* Card 1: Amount */}
-  <Card className="p-4" title="Amount to stake" sub={`Available: ${fmtNumber(balance, 2)} Pi${isDev ? ' (dev)' : ''}`}>
-          <div className="space-y-3">
-            <NumberWithSlider
-              label="Amount (Pi)"
-              value={amt}
-              onChange={setAmt}
-              min={0}
-              max={balance}
-              step={0.000001}
-              balance={balance}
-            />
-            {invalidReason && (
-              <div role="alert" className="text-xs text-[color:var(--danger)]">
-                {invalidReason}
-              </div>
-            )}
-            <div className="flex flex-wrap gap-2" aria-label="Quick amount presets">
-              {[25,50,75,100].map(p => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setAmt(Number((balance * (p/100)).toFixed(6)))}
-                  className="rounded-full border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--acc)] focus-visible:ring-offset-2 focus-visible:ring-offset-black/20 transition-all"
-                  aria-label={`Set ${p}%`}
-                >
-                  {p}%
-                </button>
-              ))}
-            </div>
-          </div>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} mt={1} alignItems="stretch">
+        {/* Amount Card */}
+        <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <CardHeader title="Amount to stake" subheader={`Available: ${fmtNumber(balance, 2)} Pi${isDev ? ' (dev)' : ''}`} />
+          <CardContent>
+            <Stack spacing={2}>
+              <TextField
+                label="Amount (Pi)"
+                type="number"
+                value={amt}
+                onChange={(e) => setAmt(Number(e.target.value))}
+                inputProps={{ min: 0, step: 0.000001 }}
+                fullWidth
+              />
+              <Slider
+                aria-label="Amount slider"
+                value={amt > balance ? balance : amt}
+                onChange={(_, v) => typeof v === 'number' && setAmt(Number(v.toFixed(6)))}
+                min={0}
+                max={balance || 1}
+                step={balance / 200 || 0.5}
+                valueLabelDisplay="auto"
+              />
+              <ToggleButtonGroup
+                size="small"
+                exclusive={false}
+                aria-label="Quick amount presets"
+                sx={{ flexWrap: 'wrap' }}
+              >
+                {quickPercents.map(p => (
+                  <ToggleButton key={p} value={p} aria-label={`${p}%`} onClick={() => setAmt(Number((balance * (p / 100)).toFixed(6)))}>
+                    {p}%
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+              {invalidReason && <Alert severity="warning" variant="outlined" sx={{ fontSize: 12 }}>{invalidReason}</Alert>}
+            </Stack>
+          </CardContent>
         </Card>
 
-        {/* Card 2: Lockup */}
-        <Card className="p-4" title="Lockup duration & APY">
-          <div className="space-y-3">
-            <LockupSlider
-              valueWeeks={weeks}
-              onChange={(w, bps) => {
-                setWeeks(w);
-                setApyBps(bps);
-              }}
-            />
-            <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span>Base {showGross ? 'Gross':'Net'} Platform APY:</span>
-                <b>{baseDisplayed? (baseDisplayed*100).toFixed(2)+'%':'—'}</b>
-                {!showGross && <span className="text-[10px] text-white/50" title="Net after 10% platform reward fee. Gross × 0.90">(fee)</span>}
-                <label className="flex items-center gap-1 ml-auto text-[10px] cursor-pointer select-none">
-                  <input type="checkbox" className="accent-brand-600" checked={showGross} onChange={e=>setShowGross(e.target.checked)} /> gross
-                </label>
-              </div>
-              <div>Your Share ({(lockScale(weeks)*100).toFixed(0)}% of base): <b>{(apy*100).toFixed(2)}%</b></div>
-              <div className="text-[10px] text-white/50 leading-snug">Early exit before expiry incurs 1% principal fee. No‑lock deposits charged 0.5% upfront entry fee.</div>
-              {weeks === 0 && <div className="text-xs text-white/60">No-lock entry fee 0.5% applies</div>}
-            </div>
-            <div className="text-sm text-white/80">
-              Est. hyaPi after period: <b className="tabular-nums">{fmtNumber(estFinal)}</b>
-            </div>
-          </div>
+        {/* Lockup Card */}
+        <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <CardHeader
+            title="Lockup duration & APY"
+            action={
+              <Tooltip
+                title={
+                  <Box sx={{ fontSize: 12, lineHeight: 1.3 }}>
+                    Share of base APY increases with lock duration:
+                    <ul style={{ paddingLeft: 16, marginTop: 4 }}>
+                      <li>0 weeks: 50%</li>
+                      <li>3 weeks: 60%</li>
+                      <li>26 weeks: 70%</li>
+                      <li>52 weeks: 80%</li>
+                      <li>104 weeks: 90%</li>
+                    </ul>
+                    Early exit fee 1%. No-lock deposits pay 0.5% entry fee.
+                  </Box>
+                }
+                placement="top"
+                arrow
+              >
+                <InfoOutlinedIcon fontSize="small" sx={{ opacity: 0.7 }} />
+              </Tooltip>
+            }
+          />
+          <CardContent>
+            <Stack spacing={2}>
+              <Box>
+                <Slider
+                  aria-label="Lockup weeks"
+                  value={weeks}
+                  onChange={(_, v) => typeof v === 'number' && setWeeks(v)}
+                  min={0}
+                  max={104}
+                  step={1}
+                  marks={lockMarks}
+                  valueLabelDisplay="auto"
+                />
+              </Box>
+              <Paper variant="outlined" sx={{ p: 1.5, background: 'transparent' }}>
+                <Stack spacing={0.5} fontSize={14}>
+                  <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                    <Typography variant="body2">Platform Net APY:</Typography>
+                    <Typography fontWeight={600} fontSize={14}>{(platformNetApy * 100).toFixed(2)}%</Typography>
+                    {emaNetApy != null && <Chip size="small" label="EMA7" variant="outlined" sx={{ height: 18, fontSize: 10 }} />}
+                  </Box>
+                  <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                    <Typography variant="body2">Base {showGross ? 'Gross' : 'Net'} Platform APY:</Typography>
+                    <Typography fontWeight={600} fontSize={14}>{baseDisplayed ? (baseDisplayed * 100).toFixed(2) + '%' : '—'}</Typography>
+                    {!showGross && <Chip size="small" label="net" variant="outlined" sx={{ height: 18, fontSize: 10 }} />}
+                    <FormControlLabel
+                      sx={{ ml: 'auto' }}
+                      control={<Switch size="small" checked={showGross} onChange={(e) => { const v = e.target.checked; setShowGross(v); if (typeof window !== 'undefined') localStorage.setItem('stakeShowGross', v ? '1' : '0'); }} />}
+                      label={<Typography variant="caption">gross</Typography>}
+                    />
+                  </Box>
+                  <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                    <Typography variant="body2">Your Share (at {weeks}w, {(lockScale(weeks) * 100).toFixed(0)}% of base):</Typography>
+                    <Typography fontWeight={600} fontSize={14}>{(apy * 100).toFixed(2)}%</Typography>
+                  </Box>
+                  <Typography variant="caption" sx={{ opacity: 0.65 }}>
+                    Early exit before expiry incurs 1% principal fee. No‑lock deposits charged 0.5% upfront entry fee.
+                  </Typography>
+                </Stack>
+              </Paper>
+              <Typography variant="body2">Est. hyaPi after period: <b>{fmtNumber(estFinal)}</b></Typography>
+            </Stack>
+          </CardContent>
         </Card>
-      </div>
+      </Stack>
 
       {msg && (
-        <div className="mt-3 rounded-md border border-[color:var(--acc)]/30 bg-[color:var(--acc)]/10 p-3 text-sm text-white">
-          {msg}
-        </div>
+        <Alert severity={msg.startsWith('Error') ? 'error' : 'success'} sx={{ mt: 2 }} variant="outlined">{msg}</Alert>
       )}
 
-      <ActivityPanel />
+      <Box mt={3}>
+        <ActivityPanel />
+      </Box>
 
-  {/* Sticky footer (mobile-first) */}
-  <div id="sticky-actions" className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-black/60 backdrop-blur sm:static sm:bg-transparent sm:border-0">
-    <div className="mx-auto max-w-screen-lg px-4 sm:px-6 py-3 flex items-center gap-2">
-            <Button
+      {/* Sticky actions for mobile */}
+      <Paper
+        elevation={3}
+        sx={{
+          position: { xs: 'fixed', sm: 'static' },
+          bottom: { xs: 0, sm: 'auto' },
+          left: 0,
+          right: 0,
+          borderTop: { xs: '1px solid', sm: 'none' },
+          borderColor: 'divider',
+          backdropFilter: { xs: 'blur(8px)', sm: 'none' },
+          background: { xs: 'rgba(0,0,0,0.6)', sm: 'transparent' },
+          px: { xs: 2, sm: 0 },
+          py: 1.5,
+          mt: { sm: 3 },
+          zIndex: 40
+        }}
+      >
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Button
+            variant="contained"
+            fullWidth
+            disabled={busy || !token || !!invalidReason}
             onClick={submit}
-      disabled={busy || !token || !!invalidReason}
-            loading={busy}
-            className="flex-1"
-            aria-label="Stake"
           >
-            Stake
+            {busy ? 'Submitting…' : 'Stake'}
           </Button>
           <Button
-            variant="secondary"
-      onClick={() => setShowPreview(true)}
-            className="px-3 py-2"
-            aria-haspopup="dialog"
-            aria-controls="stake-preview"
-      disabled={!!invalidReason}
+            variant="outlined"
+            disabled={!!invalidReason}
+            onClick={() => setPreviewOpen(true)}
           >
             Preview
           </Button>
-        </div>
-      </div>
+        </Stack>
+      </Paper>
+      <Box height={64} display={{ xs: 'block', sm: 'none' }} />
 
-      {/* Preview modal */}
-    {showPreview && (
-        <div
-          role="dialog"
-          id="stake-preview"
-          aria-modal="true"
-          className="fixed inset-0 z-40 flex items-end justify-center bg-black/50 p-4 sm:items-center"
-      onClick={() => setShowPreview(false)}
-        >
-      <div ref={dialogRef} className="w-full max-w-md" onClick={(e)=>e.stopPropagation()}>
-            <Card className="p-4" title="Stake summary" sub="Review before submitting">
-              <div className="space-y-2 text-sm text-white/80">
-                <div className="flex justify-between"><span>Amount</span><span className="tabular-nums">{fmtNumber(amt)} Pi</span></div>
-                <div className="flex justify-between"><span>Lockup</span><span>{weeks} weeks</span></div>
-                <div className="flex justify-between"><span>Platform {showGross? 'Gross':'Net'} APY</span><span>{baseDisplayed? (baseDisplayed*100).toFixed(2)+'%':'—'}</span></div>
-                <div className="flex justify-between"><span>Your Share</span><span>{(apy*100).toFixed(2)}%</span></div>
-                <div className="flex justify-between"><span>Early Exit Fee</span><span>1%</span></div>
-                {weeks===0 && <div className="flex justify-between"><span>Entry Fee</span><span>0.5%</span></div>}
-                <div className="flex justify-between"><span>Share Factor</span><span>{(lockScale(weeks)*100).toFixed(0)}%</span></div>
-                {weeks === 0 && (
-                  <div className="flex justify-between"><span>Init fee</span><span>0.5%</span></div>
-                )}
-                <div className="flex justify-between"><span>Est. hyaPi after period</span><span className="tabular-nums">{fmtNumber(estFinal)}</span></div>
-                {!((globalThis as any).Pi) && (
-                  <div className="rounded border border-yellow-600/40 bg-yellow-600/10 p-2 text-yellow-200">
-                    Open in Pi Browser to complete a real Testnet payment. In local dev we&apos;ll simulate the deposit.
-                  </div>
-                )}
-              </div>
-              <div className="mt-3 flex items-center justify-end gap-2">
-                <Button className="px-3 py-1.5" variant="secondary" onClick={()=>setShowPreview(false)}>Close</Button>
-                <Button className="px-3 py-1.5" onClick={()=>{ setShowPreview(false); submit(); }}>Confirm & Stake</Button>
-              </div>
-            </Card>
-          </div>
-        </div>
-  )}
-  {/* Spacer to prevent bottom content being hidden behind sticky footers on mobile */}
-  <div className="h-16 sm:hidden" />
-    </div>
+      {/* Preview Dialog */}
+      <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Stake summary</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1} fontSize={14}>
+            <Stack direction="row" justifyContent="space-between"><span>Amount</span><span>{fmtNumber(amt)} Pi</span></Stack>
+            <Stack direction="row" justifyContent="space-between"><span>Lockup</span><span>{weeks} weeks</span></Stack>
+            <Stack direction="row" justifyContent="space-between"><span>Platform {showGross ? 'Gross' : 'Net'} APY</span><span>{baseDisplayed ? (baseDisplayed * 100).toFixed(2) + '%' : '—'}</span></Stack>
+            <Stack direction="row" justifyContent="space-between"><span>Your Share</span><span>{(apy * 100).toFixed(2)}%</span></Stack>
+            <Stack direction="row" justifyContent="space-between"><span>Early Exit Fee</span><span>1%</span></Stack>
+            {weeks === 0 && (
+              <Stack direction="row" justifyContent="space-between"><span>Entry Fee</span><span>0.5%</span></Stack>
+            )}
+            <Stack direction="row" justifyContent="space-between"><span>Share Factor</span><span>{(lockScale(weeks) * 100).toFixed(0)}%</span></Stack>
+            <Stack direction="row" justifyContent="space-between"><span>Est. hyaPi after period</span><span>{fmtNumber(estFinal)}</span></Stack>
+            {!((globalThis as any).Pi) && (
+              <Alert severity="info" variant="outlined" sx={{ mt: 1 }}>
+                Open in Pi Browser to complete a real Testnet payment. In local dev we simulate the deposit.
+              </Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="outlined" onClick={() => setPreviewOpen(false)}>Close</Button>
+          <Button variant="contained" onClick={() => { setPreviewOpen(false); submit(); }} disabled={busy || !!invalidReason}>Confirm & Stake</Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }

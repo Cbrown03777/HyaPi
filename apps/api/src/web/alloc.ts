@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { makePreview, savePlanAndMarkExecuted, allocationSummary, recordAllocationSnapshot, getAllocationHistory, loadLockShareCurve, updateHoldings } from '../services/alloc';
+import { makePreview, savePlanAndMarkExecuted, allocationSummary, recordAllocationSnapshot, getAllocationHistory, loadLockShareCurve, updateHoldings, setOverrideTargets } from '../services/alloc';
+import { db } from '../services/db';
 
 // Schemas for new allocation planner contract (additive; does not break existing GET /preview)
 const HoldingSchema = z.object({ key: z.string(), usd: z.number().nonnegative() });
@@ -18,6 +19,7 @@ const PreviewBodySchema = z.object({
 });
 
 export const allocRouter = Router();
+export const allocGovPublicRouter = Router();
 
 allocRouter.get('/preview', async (req, res) => {
   try {
@@ -34,6 +36,24 @@ allocRouter.get('/summary', async (req, res) => {
   try {
     const summary = await allocationSummary();
     res.json({ success:true, data: summary });
+  } catch (e:any) {
+    res.status(500).json({ success:false, error:{ code:'SERVER', message: e.message }});
+  }
+});
+
+// Admin: force a snapshot into allocation_history immediately
+allocRouter.post('/snapshot', async (req, res) => {
+  try {
+    // Basic admin auth: allow if DEV token or if ALLOC_ALLOW_EXEC_IDS contains userId
+    const user = (req as any).user;
+    const allowList = (process.env.ALLOC_ALLOW_EXEC_IDS || '').split(',').map(s=>s.trim()).filter(Boolean);
+    const isAdmin = user?.isDev || (user?.userId && allowList.includes(String(user.userId)));
+    if (!isAdmin) return res.status(403).json({ success:false, error:{ code:'FORBIDDEN', message:'not authorized' }});
+
+    // Compute summary and persist a snapshot
+    const summary = await allocationSummary();
+    await recordAllocationSnapshot();
+    res.json({ success:true, data: { snapshot: summary } });
   } catch (e:any) {
     res.status(500).json({ success:false, error:{ code:'SERVER', message: e.message }});
   }
@@ -78,6 +98,149 @@ allocRouter.get('/ema', async (req,res) => {
 
 allocRouter.get('/lock-curve', (_req,res)=> {
   res.json({ success:true, data: loadLockShareCurve() });
+});
+
+// Enumerate permissible dynamic allocation target keys (derived from latest composite rates)
+allocRouter.get('/keys', async (_req,res) => {
+  try {
+    // Reuse allocationSummary rate mapping indirectly by querying venue_rates recent rows OR call getCompositeRates
+    const rows = await (await import('../services/gov')).getCompositeRates?.();
+    const keys = new Set<string>();
+    if (Array.isArray(rows)) {
+      for (const r of rows) {
+        const base = `${(r as any).venue}:${(r as any).market}`;
+        keys.add(base);
+        if ((r as any).chain) keys.add(`${(r as any).venue}:${(r as any).chain}:${(r as any).market}`);
+      }
+    }
+    res.json({ success:true, data: Array.from(keys).sort() });
+  } catch (e:any) {
+    res.status(500).json({ success:false, error:{ code:'SERVER', message:e.message }});
+  }
+});
+
+// Active precedence layer (override > gov) normalized weights + source + normalization sum
+allocRouter.get('/active-targets', async (_req,res) => {
+  try {
+    // First attempt override
+    const override = await db.query<{ key:string; weight_fraction:number; applied_at:Date }>(
+      `SELECT key, weight_fraction, applied_at FROM allocation_targets
+        WHERE source='override' AND (expires_at IS NULL OR expires_at > now())
+        ORDER BY applied_at DESC`);
+    const use = override.rows.length ? { rows: override.rows, source: 'override' as const } :
+      await (async () => {
+        const gov = await db.query<{ key:string; weight_fraction:number; applied_at:Date }>(
+          `SELECT key, weight_fraction, applied_at FROM allocation_targets
+             WHERE source='gov'
+             ORDER BY applied_at DESC`);
+        return { rows: gov.rows, source: gov.rows.length? 'gov' as const : 'legacy' as const };
+      })();
+    if (!use.rows.length) return res.json({ success:true, data:{ source: use.source, normalization:1, weights: {} } });
+    // Retain first-seen value per key (latest applied_at ordering). Normalize.
+    const latest: Record<string, number> = {};
+    for (const r of use.rows) if (!(r.key in latest)) latest[r.key] = Number(r.weight_fraction);
+    const sum = Object.values(latest).reduce((a,b)=>a+b,0) || 1;
+    const norm: Record<string, number> = {};
+    for (const k of Object.keys(latest)) norm[k] = latest[k] / sum;
+    res.json({ success:true, data:{ source: use.source, normalization: sum, weights: norm } });
+  } catch (e:any) {
+    res.status(500).json({ success:false, error:{ code:'SERVER', message:e.message }});
+  }
+});
+
+// Governance-approved allocation history (dynamic keys) – PUBLIC mirror
+async function handleGovHistory(req: any, res: any) {
+  try {
+    const limit = Math.min(500, Number(req.query.limit)||100);
+    const proposalId = req.query.proposalId ? String(req.query.proposalId) : null;
+    const sinceRaw = req.query.since ? String(req.query.since) : null;
+    let since: Date | null = null;
+    if (sinceRaw) {
+      const d = new Date(sinceRaw);
+      if (!isNaN(d.getTime())) since = d; else return res.status(400).json({ success:false, error:{ code:'BAD_SINCE', message:'invalid since timestamp' }});
+    }
+    const clauses: string[] = [];
+    const params: any[] = [];
+    if (proposalId) { clauses.push(`proposal_id = $${params.length+1}`); params.push(proposalId); }
+    if (since) { clauses.push(`applied_at >= $${params.length+1}`); params.push(since); }
+    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    params.push(limit);
+    const sql = `SELECT proposal_id, key, weight_fraction, applied_at, normalization
+                   FROM gov_allocation_history
+                   ${where}
+                   ORDER BY applied_at DESC, id DESC
+                   LIMIT $${params.length}`;
+    const rows = await db.query<{ proposal_id:string; key:string; weight_fraction:string; applied_at:Date; normalization:string|null }>(sql, params);
+    if (rows.rowCount === 0 && !proposalId && !since) {
+      // Fallback: synthesize a single snapshot.
+      // Attempt precedence: active targets (override -> gov). If none, synthesize from current holdings.
+      const use = await (async () => {
+        const ov = await db.query<{ key:string; weight_fraction:string; applied_at:Date }>(
+          `SELECT key, weight_fraction, applied_at
+             FROM allocation_targets
+            WHERE source='override' AND (expires_at IS NULL OR expires_at > now())
+            ORDER BY applied_at DESC`
+        );
+        if (ov.rowCount) return { kind:'targets' as const, rows: ov.rows, source: 'override' as const };
+        const gv = await db.query<{ key:string; weight_fraction:string; applied_at:Date }>(
+          `SELECT key, weight_fraction, applied_at
+             FROM allocation_targets
+            WHERE source='gov'
+            ORDER BY applied_at DESC`
+        );
+        if (gv.rowCount) return { kind:'targets' as const, rows: gv.rows, source: 'gov' as const };
+        // No targets exist – use current holdings snapshot
+        const vh = await db.query<{ key:string; usd_notional:string }>(`SELECT key, usd_notional FROM venue_holdings`);
+        const total = vh.rows.reduce((s,r)=> s + Number(r.usd_notional), 0);
+        const nowIso = new Date().toISOString();
+        const data = vh.rows.map(r => ({ proposalId: 'holdings', key: r.key, weight: Number(r.usd_notional), appliedAt: nowIso, normalization: Math.max(1, total) }));
+        return { kind:'holdings' as const, data };
+      })();
+
+      if (use.kind === 'holdings') {
+        return res.json({ success:true, data: use.data, meta:{ fallback:'holdings' } });
+      } else {
+        const latest: Record<string, { weight:number; appliedAt: Date }> = {};
+        for (const r of use.rows) {
+          if (!(r.key in latest)) latest[r.key] = { weight: Number(r.weight_fraction), appliedAt: r.applied_at };
+        }
+        const normSum = Object.values(latest).reduce((s,v)=> s + v.weight, 0) || 1;
+        const data = Object.entries(latest).map(([key, v]) => ({
+          proposalId: use.source === 'override' ? 'override' : 'active',
+          key,
+          weight: v.weight,
+          appliedAt: v.appliedAt.toISOString(),
+          normalization: normSum
+        }));
+        return res.json({ success:true, data, meta:{ fallback:'active-targets', source: use.source } });
+      }
+    }
+    res.json({ success:true, data: rows.rows.map(r=>({
+      proposalId: r.proposal_id,
+      key: r.key,
+      weight: Number(r.weight_fraction),
+      appliedAt: r.applied_at.toISOString(),
+      normalization: r.normalization ? Number(r.normalization) : 1
+    })) });
+  } catch (e:any) {
+    res.status(500).json({ success:false, error:{ code:'SERVER', message:e.message }});
+  }
+}
+allocGovPublicRouter.get('/gov-history', handleGovHistory);
+allocRouter.get('/gov-history', handleGovHistory);
+
+// Clear override targets (admin only)
+allocRouter.post('/override/clear', async (req,res) => {
+  try {
+    const user = (req as any).user;
+    const allowList = (process.env.ALLOC_ALLOW_EXEC_IDS || '').split(',').map(s=>s.trim()).filter(Boolean);
+    const isAdmin = user?.isDev || (user?.userId && allowList.includes(String(user.userId)));
+    if (!isAdmin) return res.status(403).json({ success:false, error:{ code:'FORBIDDEN', message:'not authorized' }});
+    await db.query(`DELETE FROM allocation_targets WHERE source='override'` as any);
+    res.json({ success:true, data:{ cleared:true }});
+  } catch (e:any) {
+    res.status(500).json({ success:false, error:{ code:'SERVER', message:e.message }});
+  }
 });
 
 // New POST /preview (additive API) allowing custom holdings/targets/guards
@@ -202,17 +365,17 @@ allocRouter.post('/execute', async (req, res) => {
       };
       const resolvedGuards = { lambda:0, softmaxK:0, bufferBps:0, minTradeUSD:0, maxVenueBps:{ aave:10000, justlend:10000, stride:10000 }, maxDriftBps:0, cooldownSec:0, allowVenue:{ aave:true, justlend:true, stride:true }, staleRateMaxSec:3600 };
       const id = await savePlanAndMarkExecuted({ plan: syntheticPlan, targets: weightsByKey, guards: resolvedGuards, gov:{}, rates:[], });
-      // Apply holdings mutate: derive new holdings by starting from provided holdings and applying deltas
+      // Compute final target holdings (authoritative) based on totalUsd and weights.
       try {
-        const currentHoldings: Record<string, number> = {};
-        for (const h of body.holdings) currentHoldings[h.key] = (currentHoldings[h.key] ?? 0) + h.usd;
-        for (const act of actions) {
-          if (!act.key) continue;
-          const cur = currentHoldings[act.key] ?? 0;
-          const delta = act.kind === 'decrease' ? -act.usd : act.usd;
-          currentHoldings[act.key] = cur + delta;
+        const finalHoldings: Record<string, number> = {};
+        if (totalUsd > 0) {
+          for (const [k,w] of Object.entries(weightsByKey)) {
+            finalHoldings[k] = w * totalUsd;
+          }
         }
-        await updateHoldings(currentHoldings);
+        await updateHoldings(finalHoldings);
+        // Persist override targets (no expiry by default)
+        await setOverrideTargets(weightsByKey, null);
       } catch (e) {
         console.warn('updateHoldings failed (non-fatal)', (e as any)?.message);
       }

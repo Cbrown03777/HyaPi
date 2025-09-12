@@ -1,14 +1,15 @@
-'use client';
+"use client";
 import { useEffect, useRef, useState } from 'react';
 import { GOV_API_BASE } from '@hyapi/shared';
 import { signInWithPi } from '@/lib/pi';
-import { Button } from '@/components/Button';
+import { Button as AppButton } from '@/components/Button';
 import { NumberWithSlider } from '@/components/NumberWithSlider';
-import { RedeemPreset } from '@/components/RedeemPreset';
+// RedeemPreset removed in favor of MUI ButtonGroup presets
 import { useToast } from '@/components/ToastProvider';
 import { useActivity } from '@/components/ActivityProvider';
 import { ActivityPanel } from '@/components/ActivityPanel';
 import { fmtNumber, fmtCompact } from '@/lib/format';
+import { ButtonGroup as MuiButtonGroup, Button as MuiButton, Alert, Chip, Box, Card, CardContent, Typography, Stack } from '@mui/material';
 
 export default function RedeemPage() {
   const [token, setToken] = useState<string>('');
@@ -24,6 +25,8 @@ export default function RedeemPage() {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const [hasLocked, setHasLocked] = useState<boolean | null>(null);
   const [feeBps, setFeeBps] = useState<number | null>(null);
+  const [redeemPath, setRedeemPath] = useState<"instant" | "queued" | "other" | null>(null);
+  const [etaTs, setEtaTs] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -71,21 +74,23 @@ export default function RedeemPage() {
   if (!res.ok || j?.success === false) throw new Error(j?.error?.message || 'Redeem failed');
       const r = j.data?.redemption;
       const path = j.data?.path as 'instant' | 'queued' | undefined;
+      setRedeemPath(path ?? 'other');
+      if (typeof r?.eta_ts === 'number') setEtaTs(r.eta_ts);
       if (path === 'instant') {
-  const m = `Instant redemption paid (${fmtCompact(amt)} Pi). ID ${r?.id}`
+        const m = `Instant redemption paid (${fmtCompact(amt)} Pi). ID ${r?.id}`;
         setMsg(m);
         toast.success(m);
-  activity.log({ id: opId, kind: 'redeem', title: `Instant redeem ${fmtCompact(amt)} Pi`, detail: `id ${r?.id}`, status: 'success' });
+        activity.log({ id: opId, kind: 'redeem', title: `Instant redeem ${fmtCompact(amt)} Pi`, detail: `id ${r?.id}`, status: 'success' });
       } else if (path === 'queued') {
-  const m = `Queued redemption created for ${fmtCompact(amt)} Pi. ETA ${r?.eta_ts}`
+        const m = `Queued redemption created for ${fmtCompact(amt)} Pi. ETA ${r?.eta_ts}`;
         setMsg(m);
         toast.warn(m);
-  activity.log({ id: opId, kind: 'redeem', title: `Queued redeem ${fmtCompact(amt)} Pi`, detail: `ETA ${r?.eta_ts}`, status: 'pending' });
+        activity.log({ id: opId, kind: 'redeem', title: `Queued redeem ${fmtCompact(amt)} Pi`, detail: `ETA ${r?.eta_ts}`, status: 'pending' });
       } else {
-  const m = `Redemption ${r?.id} (${fmtCompact(amt)} Pi) is ${r?.status}`
+        const m = `Redemption ${r?.id} (${fmtCompact(amt)} Pi) is ${r?.status}`;
         setMsg(m);
         toast.info(m);
-  activity.log({ id: opId, kind: 'redeem', title: `Redeem ${fmtCompact(amt)} Pi`, detail: `${r?.status}`, status: 'success' });
+        activity.log({ id: opId, kind: 'redeem', title: `Redeem ${fmtCompact(amt)} Pi`, detail: `${r?.status}`, status: 'success' });
       }
     } catch (e: any) {
   const m = `❌ ${e.message}`
@@ -132,33 +137,47 @@ export default function RedeemPage() {
   }, [showPreview]);
 
   return (
-    <div className="mx-auto max-w-screen-lg px-4 sm:px-6 py-6">
-  <h2 className="text-xl sm:text-2xl font-semibold leading-tight">Redeem hyaPi → Pi</h2>
+    <Box>
+  <Typography variant="h5" fontWeight={600}>Redeem hyaPi → Pi</Typography>
 
       {/* Headline stats */}
   {balance != null && (
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="panel panel-gradient p-3">
-            <div className="text-xs text-[var(--text-700)]">Available</div>
-            <div className="mt-1 text-lg font-semibold">{fmtNumber(balance)} hyaPi</div>
-          </div>
-          <div className="panel panel-gradient p-3">
-            <div className="text-xs text-[var(--text-700)]">Est. Pi value</div>
-            <div className="mt-1 text-lg font-semibold">{fmtNumber(piValue ?? (balance * (pps ?? 1)))} Pi</div>
-          </div>
-          <div className="panel panel-gradient p-3">
-            <div className="text-xs text-[var(--text-700)]">PPS</div>
-            <div className="mt-1 text-lg font-semibold">{fmtNumber(pps ?? 1)}</div>
-          </div>
-        </div>
+        <Box sx={{ mt: 2, display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(3,1fr)' } }}>
+          <Card variant="outlined" sx={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0.08))' }}>
+            <CardContent sx={{ py: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">Available</Typography>
+              <Typography variant="subtitle1" fontWeight={600}>{fmtNumber(balance)} hyaPi</Typography>
+            </CardContent>
+          </Card>
+          <Card variant="outlined" sx={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0.08))' }}>
+            <CardContent sx={{ py: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">Est. Pi value</Typography>
+              <Typography variant="subtitle1" fontWeight={600}>{fmtNumber(piValue ?? (balance * (pps ?? 1)))} Pi</Typography>
+            </CardContent>
+          </Card>
+          <Card variant="outlined" sx={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0.08))' }}>
+            <CardContent sx={{ py: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">PPS</Typography>
+              <Typography variant="subtitle1" fontWeight={600}>{fmtNumber(pps ?? 1)}</Typography>
+            </CardContent>
+          </Card>
+        </Box>
       )}
 
-      <div className="mt-4 space-y-4">
+      <Stack spacing={3} sx={{ mt: 4 }}>
         {balance != null && (
-          <div className="panel panel-gradient p-4">
-            <div className="mb-2 text-sm text-[var(--text-700)]">Quick picks</div>
-            <RedeemPreset balance={balance} onPick={(v) => setAmt(v)} />
-          </div>
+          <Card variant="outlined" sx={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.03), rgba(255,255,255,0.08))' }}>
+            <CardContent sx={{ pt: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }} id="preset-label">Quick picks</Typography>
+            <MuiButtonGroup variant="outlined" size="small" aria-labelledby="preset-label" aria-label="Quick amount presets 25 50 75 100 percent">
+              {[25,50,75,100].map(p => (
+                <MuiButton key={p} onClick={() => setAmt(Number((balance * (p/100)).toFixed(6)))} aria-label={`Set amount to ${p}% of balance`}>
+                  {p}%
+                </MuiButton>
+              ))}
+            </MuiButtonGroup>
+            </CardContent>
+          </Card>
         )}
 
         <NumberWithSlider
@@ -171,84 +190,97 @@ export default function RedeemPage() {
           {...(balance != null ? { balance } : {})}
         />
         {invalidReason && (
-          <div role="alert" className="text-xs text-[color:var(--danger)]">
-            {invalidReason}
-          </div>
+          <Typography role="alert" variant="caption" color="error.main">{invalidReason}</Typography>
         )}
 
         {msg && (
-          <div className="rounded-xl2 border border-[rgba(34,216,138,0.35)] bg-[rgba(34,216,138,0.12)] p-3 text-sm">
+          <Alert
+            severity={redeemPath === 'instant' ? 'success' : redeemPath === 'queued' ? 'info' : msg.startsWith('❌') ? 'error' : 'warning'}
+            variant="outlined"
+            sx={{ fontSize: 13 }}
+            role="status"
+          >
             {msg}
-          </div>
+          </Alert>
         )}
 
-        <div className="space-y-1">
-          <p className="text-sm text-[var(--text-700)]">
+        <Box>
+          <Typography variant="body2" color="text.secondary">
             Instant if treasury buffer has liquidity. Otherwise queued (e.g., Cosmos unbonding ~21 days).
-          </p>
+          </Typography>
           {hasLocked && (
-            <p className="text-xs text-[color:var(--warn)]">
+            <Typography variant="caption" color="warning.main" display="block" sx={{ mt: 0.5 }}>
               Early exit fee applies while a locked stake is active
               {Number.isFinite(feeBps ?? NaN) ? ` (${((feeBps as number) / 100).toFixed(2)}% of amount)` : ''}.
-            </p>
+            </Typography>
           )}
-        </div>
-      </div>
+          <Stack direction="row" flexWrap="wrap" spacing={1} useFlexGap sx={{ mt: 1 }} aria-label="Redemption status chips">
+            {redeemPath === 'instant' && <Chip size="small" color="success" label="Instant buffer" aria-label="Instant buffer redemption" />}
+            {redeemPath === 'queued' && <Chip size="small" color="info" label="Queued" aria-label="Queued redemption" />}
+            {redeemPath === 'queued' && etaTs && <Chip size="small" variant="outlined" label={`ETA ${new Date(etaTs*1000).toLocaleDateString()}`} aria-label={`Estimated completion date ${new Date(etaTs*1000).toLocaleDateString()}`} />}
+            {hasLocked && Number.isFinite(feeBps ?? NaN) && <Chip size="small" variant="outlined" label={`Fee ${(feeBps as number / 100).toFixed(2)}%`} aria-label={`Early exit fee ${(feeBps as number / 100).toFixed(2)} percent`} />}
+          </Stack>
+        </Box>
+      </Stack>
       <ActivityPanel />
 
   {/* Sticky footer (mobile-first) */}
-  <div id="sticky-actions" className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-black/60 backdrop-blur sm:static sm:bg-transparent sm:border-0">
-        <div className="mx-auto max-w-screen-lg px-4 sm:px-6 py-3 flex items-center gap-2">
-          <Button
+  <Box id="sticky-actions" sx={{ position: { xs: 'fixed', sm: 'static' }, left: 0, right: 0, bottom: 0, zIndex: 50, borderTop: { xs: '1px solid rgba(255,255,255,0.1)', sm: 'none' }, bgcolor: { xs: 'rgba(0,0,0,0.6)', sm: 'transparent' }, backdropFilter: { xs: 'blur(10px)', sm: 'none' } }}>
+        <Box sx={{ mx: 'auto', maxWidth: 'lg', px: { xs: 2, sm: 3 }, py: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+          <AppButton
             onClick={submit}
             disabled={busy || !token || !!invalidReason}
             loading={busy}
-            className="flex-1"
+            sx={{ flex: 1 }}
             aria-label="Redeem"
             rightIcon={<span>⇄</span>}
           >
             Redeem
-          </Button>
-          <Button
+          </AppButton>
+          <AppButton
             variant="secondary"
             onClick={() => setShowPreview(true)}
-            className="px-3 py-2"
+            sx={{ px: 1.5, py: 1 }}
             aria-haspopup="dialog"
             aria-controls="redeem-preview"
             disabled={!!invalidReason}
           >
             Preview
-          </Button>
-        </div>
-      </div>
+          </AppButton>
+        </Box>
+      </Box>
 
       {/* Preview modal */}
       {showPreview && (
-        <div
+        <Box
           role="dialog"
           id="redeem-preview"
           aria-modal="true"
-          className="fixed inset-0 z-40 flex items-end justify-center bg-black/50 p-4 sm:items-center"
           onClick={() => setShowPreview(false)}
+          sx={{ position: 'fixed', inset: 0, zIndex: 40, display: 'flex', alignItems: { xs: 'flex-end', sm: 'center' }, justifyContent: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.5)' }}
         >
-          <div ref={dialogRef} className="w-full max-w-md" onClick={(e)=>e.stopPropagation()}>
-            <div className="panel panel-gradient p-4">
-              <div className="text-sm font-medium">Redeem summary</div>
-              <div className="mt-2 space-y-2 text-sm text-white/80">
-                <div className="flex justify-between"><span>Amount</span><span className="tabular-nums">{fmtNumber(amt)} Pi</span></div>
-                <div className="flex justify-between"><span>Available</span><span className="tabular-nums">{fmtNumber(balance ?? 0)} hyaPi</span></div>
-                <div className="text-xs text-white/60">Path depends on buffer liquidity; may be queued.</div>
-              </div>
-              <div className="mt-3 flex items-center justify-end gap-2">
-                <Button className="px-3 py-1.5" variant="secondary" onClick={()=>setShowPreview(false)}>Close</Button>
-                <Button className="px-3 py-1.5" onClick={()=>{ setShowPreview(false); submit(); }}>Confirm & Redeem</Button>
-              </div>
-            </div>
-      </div>
-      {/* Spacer to prevent bottom content being hidden behind sticky footers on mobile */}
-      <div className="h-16 sm:hidden" />
-        </div>
+          <Box ref={dialogRef} onClick={(e)=>e.stopPropagation()} sx={{ width: '100%', maxWidth: 420 }}>
+            <Card variant="outlined" sx={{ background: 'linear-gradient(145deg, rgba(255,255,255,0.07), rgba(255,255,255,0.15))' }}>
+              <CardContent>
+                <Typography variant="subtitle2" fontWeight={600}>Redeem summary</Typography>
+                <Stack spacing={1} sx={{ mt: 2, fontSize: 14, color: 'rgba(255,255,255,0.8)' }}>
+                  <Stack direction="row" justifyContent="space-between"><span>Amount</span><span>{fmtNumber(amt)} Pi</span></Stack>
+                  <Stack direction="row" justifyContent="space-between" sx={{ fontVariantNumeric:'tabular-nums' }}>
+                    <span>Available</span>
+                    <span>{fmtNumber(balance ?? 0)} hyaPi</span>
+                  </Stack>
+                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)' }}>Path depends on buffer liquidity; may be queued.</Typography>
+                </Stack>
+                <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 3 }}>
+                  <AppButton sx={{ px: 1.5, py: 0.75 }} variant="secondary" onClick={()=>setShowPreview(false)}>Close</AppButton>
+                  <AppButton sx={{ px: 1.5, py: 0.75 }} onClick={()=>{ setShowPreview(false); submit(); }}>Confirm & Redeem</AppButton>
+                </Stack>
+              </CardContent>
+            </Card>
+      <Box sx={{ height: 64, display: { xs: 'block', sm: 'none' } }} />
+          </Box>
+        </Box>
       )}
-    </div>
+    </Box>
   );
 }

@@ -1,5 +1,5 @@
 "use client";
-import clsx from 'clsx';
+import { Card, CardContent, Box, Typography, Chip, Button, Stack, Tooltip } from '@mui/material';
 
 export type Proposal = {
   proposal_id: string;
@@ -34,18 +34,14 @@ function percent(a: bigint, total: bigint) {
   return Math.max(0, Math.min(100, p));
 }
 
-function StatusPill({status}:{status:Proposal['status']}) {
-  const styles = {
-    active:   'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-    finalized:'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-    executed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-    default:  'bg-slate-100 text-slate-700 ring-1 ring-slate-200'
-  } as const;
-  return (
-    <span className={clsx('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', styles[status as keyof typeof styles] ?? styles.default)}>
-      {status}
-    </span>
-  );
+function StatusPill({ status }: { status: Proposal['status'] }) {
+  const colorMap: Record<string, { label: string; color: 'primary' | 'warning' | 'success' | 'default' }> = {
+    active: { label: 'active', color: 'primary' },
+    finalized: { label: 'finalized', color: 'warning' },
+    executed: { label: 'executed', color: 'success' },
+  };
+  const meta = colorMap[status] ?? { label: status, color: 'default' as const };
+  return <Chip size="small" color={meta.color} label={meta.label} sx={{ textTransform: 'capitalize' }} />;
 }
 
 export default function ProposalCard({ p, onVote, onFinalize, onExecute, busy }: {
@@ -70,45 +66,85 @@ export default function ProposalCard({ p, onVote, onFinalize, onExecute, busy }:
   const pctAb  = percent(c,total);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">{p.title}</h3>
-          {p.description && <p className="mt-1 text-sm text-slate-600">{p.description}</p>}
-        </div>
-        <StatusPill status={p.status}/>
-      </div>
+    <Card variant="outlined" sx={{ borderRadius: 3, transition: 'box-shadow .2s', '&:hover': { boxShadow: 6 } }}>
+      <CardContent sx={{ pb: 2 }}>
+        <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={2}>
+          <Box flex={1} minWidth={0}>
+            <Typography variant="subtitle1" fontWeight={600} gutterBottom sx={{ mb: p.description ? 0.5 : 0 }}>
+              {p.title}
+            </Typography>
+            {p.description && (
+              <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                {p.description}
+              </Typography>
+            )}
+          </Box>
+          <StatusPill status={p.status} />
+        </Stack>
 
-      {p.allocation && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {Object.entries(p.allocation).map(([k,v])=> (
-            <span key={k} className="text-xs rounded-md bg-slate-100 text-slate-700 px-2 py-1">
-              {k.toUpperCase()}: {(v*100).toFixed(0)}%
-            </span>
-          ))}
-        </div>
-      )}
+        {p.allocation && (
+          <Stack direction="row" flexWrap="wrap" spacing={1} useFlexGap sx={{ mt: 2 }}>
+            {Object.entries(p.allocation).map(([k, v], idx) => (
+              <Chip
+                key={k}
+                size="small"
+                label={`${k.toUpperCase()}: ${(v * 100).toFixed(0)}%`}
+                variant="outlined"
+                sx={{
+                  fontSize: 11,
+                  borderColor: 'divider',
+                  bgcolor: 'action.hover',
+                }}
+              />
+            ))}
+          </Stack>
+        )}
 
-      <div className="mt-4">
-        <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-          <div className="h-2 bg-emerald-500" style={{ width: `${pctFor}%` }}/>
-          <div className="h-2 bg-rose-500" style={{ width: `${pctAg}%` }}/>
-          <div className="h-2 bg-amber-500" style={{ width: `${pctAb}%` }}/>
-        </div>
-        <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-slate-700">
-          <div>For: <span className="font-medium">{e18ToNumStr(forP)}</span> <span className="text-slate-500">({pctFor.toFixed(1)}%)</span></div>
-          <div>Against: <span className="font-medium">{e18ToNumStr(agP)}</span> <span className="text-slate-500">({pctAg.toFixed(1)}%)</span></div>
-          <div>Abstain: <span className="font-medium">{e18ToNumStr(abP)}</span> <span className="text-slate-500">({pctAb.toFixed(1)}%)</span></div>
-        </div>
-      </div>
+        <Box sx={{ mt: 3 }}>
+          <Tooltip title={`For ${pctFor.toFixed(1)}% / Against ${pctAg.toFixed(1)}% / Abstain ${pctAb.toFixed(1)}%`} placement="top" arrow>
+            <Box
+              sx={{
+                height: 8,
+                width: '100%',
+                borderRadius: 4,
+                overflow: 'hidden',
+                display: 'flex',
+                bgcolor: 'background.default',
+                boxShadow: (t) => `inset 0 0 0 1px ${t.palette.divider}`,
+              }}
+              aria-label="Vote distribution bar"
+              role="img"
+            >
+              <Box sx={{ flex: pctFor || 0, bgcolor: 'success.main' }} />
+              <Box sx={{ flex: pctAg || 0, bgcolor: 'error.main' }} />
+              <Box sx={{ flex: pctAb || 0, bgcolor: 'warning.main' }} />
+            </Box>
+          </Tooltip>
+          <Stack direction="row" spacing={2} sx={{ mt: 1 }} divider={<Box sx={{ width: 1, opacity: 0 }} />}> {/* spacer */}
+            <Typography variant="caption" color="text.secondary">
+              For: <Box component="span" fontWeight={600}>{e18ToNumStr(forP)}</Box> ({pctFor.toFixed(1)}%)
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Against: <Box component="span" fontWeight={600}>{e18ToNumStr(agP)}</Box> ({pctAg.toFixed(1)}%)
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Abstain: <Box component="span" fontWeight={600}>{e18ToNumStr(abP)}</Box> ({pctAb.toFixed(1)}%)
+            </Typography>
+          </Stack>
+        </Box>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button disabled={busy} onClick={()=>onVote(p.proposal_id,'for')} className="inline-flex items-center rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">Vote For</button>
-        <button disabled={busy} onClick={()=>onVote(p.proposal_id,'against')} className="inline-flex items-center rounded-md bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50">Against</button>
-        <button disabled={busy} onClick={()=>onVote(p.proposal_id,'abstain')} className="inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50">Abstain</button>
-        {onFinalize && (<button disabled={busy} onClick={()=>onFinalize(p.proposal_id)} className="ml-auto inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Finalize</button>)}
-        {onExecute && (<button disabled={busy} onClick={()=>onExecute(p.proposal_id)} className="inline-flex items-center rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Execute</button>)}
-      </div>
-    </div>
+        <Stack direction="row" flexWrap="wrap" spacing={1} sx={{ mt: 3 }}>
+          <Button size="small" disabled={!!busy} onClick={() => onVote(p.proposal_id, 'for')} color="success" variant="contained">Vote For</Button>
+          <Button size="small" disabled={!!busy} onClick={() => onVote(p.proposal_id, 'against')} color="error" variant="contained">Against</Button>
+          <Button size="small" disabled={!!busy} onClick={() => onVote(p.proposal_id, 'abstain')} color="warning" variant="contained">Abstain</Button>
+          {onFinalize && (
+            <Button size="small" disabled={!!busy} onClick={() => onFinalize(p.proposal_id)} variant="outlined" sx={{ ml: 'auto' }}>Finalize</Button>
+          )}
+          {onExecute && (
+            <Button size="small" disabled={!!busy} onClick={() => onExecute(p.proposal_id)} variant="outlined">Execute</Button>
+          )}
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }

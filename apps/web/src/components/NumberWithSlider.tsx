@@ -1,51 +1,54 @@
-'use client'
-import { useId } from 'react'
+"use client";
+import React, { useId } from 'react';
+import { Box, Card, CardContent, Stack, TextField, Slider, Typography } from '@mui/material';
 
 type Props = {
-  label: string
-  value: number
-  onChange: (v:number)=>void
-  min?: number
-  max?: number
-  step?: number
-  balance?: number
-}
+  label: string;
+  value: number;
+  onChange: (v:number)=>void;
+  min?: number;
+  max?: number;
+  step?: number;
+  balance?: number;
+};
 
 export function NumberWithSlider({ label, value, onChange, min=0, max=100, step=0.01, balance }: Props) {
-  const inputId = useId()
-  const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0
+  const inputId = useId();
+  const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
 
   return (
-  <div className="rounded-xl2 border border-base-200 bg-white/70 backdrop-blur p-4 shadow-card">
-      <label htmlFor={inputId} className="block text-sm font-medium text-base-700">{label}</label>
-    <div className="mt-2 flex items-center gap-3">
-        <input
-          id={inputId}
-          type="number"
-          inputMode="decimal"
-          min={min} max={max} step={step}
-          value={Number.isFinite(value) ? value : 0}
-          onChange={(e)=>onChange(Number(e.target.value))}
-      className="w-full min-h-[44px] rounded-md border border-white/10 bg-white/5 px-3 py-2 text-white/90 placeholder:text-white/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2 focus-visible:ring-offset-black/20 hover:border-white/20"
-          aria-describedby={balance != null ? `${inputId}-bal` : undefined}
-        />
-        {balance != null && (
-          <span id={`${inputId}-bal`} className="text-xs text-base-500">
-            Balance: <b>{balance.toFixed(2)} Pi</b>
-          </span>
-        )}
-      </div>
-    <div className="mt-3">
-        <input
-          type="range"
-          min={min} max={max} step={step}
-          value={Number.isFinite(value) ? value : 0}
-          onChange={(e)=>onChange(Number(e.target.value))}
-          aria-label={`${label} slider`}
-      className="w-full accent-[var(--pri)]"
-        />
-        <div className="mt-1 text-right text-xs text-base-500">{pct.toFixed(0)}%</div>
-      </div>
-    </div>
-  )
+    <Card variant="outlined" sx={{ p:1.5 }}>
+      <CardContent sx={{ p:0, '&:last-child':{ pb:0 } }}>
+        <Stack spacing={1.5}>
+          <Stack direction="row" alignItems="center" spacing={2}>
+            <TextField
+              id={inputId}
+              size="small"
+              label={label}
+              type="number"
+              inputMode="decimal"
+              value={Number.isFinite(value) ? value : 0}
+              onChange={(e)=>onChange(Number(e.target.value))}
+              inputProps={{ min, max, step }}
+              fullWidth
+            />
+            {balance != null && (
+              <Typography variant="caption" sx={{ whiteSpace:'nowrap', opacity:0.7 }}>Bal: <b>{balance.toFixed(2)} Pi</b></Typography>
+            )}
+          </Stack>
+          <Box px={1}>
+            <Slider
+              aria-label={label}
+              min={min}
+              max={max}
+              step={step}
+              value={Number.isFinite(value) ? value : 0}
+              onChange={(_,v)=> onChange(Number(v))}
+            />
+            <Typography variant="caption" sx={{ display:'block', textAlign:'right', opacity:0.65 }}>{pct.toFixed(0)}%</Typography>
+          </Box>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
 }

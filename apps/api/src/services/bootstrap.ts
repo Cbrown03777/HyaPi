@@ -1,7 +1,7 @@
 import { db } from './db';
 
 export async function ensurePiIntegration() {
-  // Create required tables if they don't exist (safety net when container init scripts haven't run)
+  // Safety-net creation (idempotent) for Pi tables if migrations not yet applied.
   await db.query(`
     CREATE TABLE IF NOT EXISTS public.pi_payments (
       id             bigserial PRIMARY KEY,
@@ -15,9 +15,7 @@ export async function ensurePiIntegration() {
       updated_at     timestamptz NOT NULL DEFAULT now()
     );
   `);
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_pi_payments_uid ON public.pi_payments(uid);
-  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_pi_payments_uid ON public.pi_payments(uid);`);
   await db.query(`
     CREATE TABLE IF NOT EXISTS public.pi_identities (
       uid        text PRIMARY KEY,
@@ -27,14 +25,14 @@ export async function ensurePiIntegration() {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
   `);
+}
 
-  // Minimal table to persist allocation plans (execute stub)
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS public.rebalance_plans (
-      id         bigserial PRIMARY KEY,
-      total_usd  numeric(24,6) NOT NULL DEFAULT 0,
-      orders     jsonb NOT NULL DEFAULT '[]'::jsonb,
-      created_at timestamptz NOT NULL DEFAULT now()
-    );
-  `);
+export async function ensureBootstrap() {
+  // Ensure singleton buffer row exists (after migration 0019, but safe if run earlier)
+  try {
+    await db.query(`INSERT INTO public.tvl_buffer (id) VALUES (1) ON CONFLICT (id) DO NOTHING;`);
+  } catch (e: any) {
+    // If table doesn't exist yet, swallow (migration not applied) – run after migrations in server.
+    if (!/relation \"tvl_buffer\" does not exist/i.test(e?.message ?? '')) throw e;
+  }
 }

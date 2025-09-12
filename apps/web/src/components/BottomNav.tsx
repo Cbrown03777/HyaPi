@@ -1,37 +1,63 @@
 "use client";
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react';
+import { Box, Link as MuiLink, Typography } from '@mui/material';
 
 export function BottomNav() {
-  const [dim, setDim] = useState(false)
-  const navRef = useRef<HTMLDivElement | null>(null)
+  const [dim, setDim] = useState(false);
+  const navRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    const target = document.getElementById('sticky-actions')
-    if (!target) return
+    const target = document.getElementById('sticky-actions');
+    if (!target) return;
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
-        if (e.isIntersecting) setDim(true)
-        else setDim(false)
+        if (e.isIntersecting) setDim(true); else setDim(false);
       }
-    }, { threshold: 0.01 })
-    io.observe(target)
-    return () => io.disconnect()
-  }, [])
+    }, { threshold: 0.01 });
+    io.observe(target);
+    return () => io.disconnect();
+  }, []);
   return (
-    <nav className={"fixed bottom-2 right-2 z-30 transition-opacity sm:hidden " + (dim ? 'opacity-40 pointer-events-none' : 'opacity-100')}>
-      <div ref={navRef} className="flex items-stretch gap-2 rounded-xl border border-[rgba(255,255,255,0.12)] bg-[rgba(18,24,35,0.85)] px-2 py-1.5 shadow-lg backdrop-blur">
-        <a href="/" className="flex flex-col items-center gap-1 px-2 text-[var(--text-700)] hover:text-[var(--text-900)]">
+    <Box
+      component="nav"
+      sx={{
+        position: 'fixed',
+        bottom: 8,
+        right: 8,
+        zIndex: 30,
+        opacity: dim ? 0.4 : 1,
+        pointerEvents: dim ? 'none' : 'auto',
+        display: { xs: 'block', sm: 'none' },
+        transition: 'opacity .25s',
+      }}
+    >
+      <Box
+        ref={navRef}
+        sx={{
+          display: 'flex',
+            alignItems: 'stretch',
+          gap: 1.5,
+          border: '1px solid rgba(255,255,255,0.12)',
+          bgcolor: 'rgba(18,24,35,0.85)',
+          px: 1.5,
+          py: 1,
+          borderRadius: 3,
+          boxShadow: 6,
+          backdropFilter: 'blur(10px)'
+        }}
+      >
+        <MuiLink href="/" underline="none" color="text.secondary" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, px: 1, '&:hover': { color: 'text.primary' } }}>
           <span aria-hidden>🏛️</span>
-          <span className="text-[10px]">Govern</span>
-        </a>
-        <a href="/stake" className="flex flex-col items-center gap-1 px-2 text-[var(--text-700)] hover:text-[var(--text-900)]">
+          <Typography sx={{ fontSize: 10 }}>Govern</Typography>
+        </MuiLink>
+        <MuiLink href="/stake" underline="none" color="text.secondary" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, px: 1, '&:hover': { color: 'text.primary' } }}>
           <span aria-hidden>📈</span>
-          <span className="text-[10px]">Stake</span>
-        </a>
-        <a href="/redeem" className="flex flex-col items-center gap-1 px-2 text-[var(--text-700)] hover:text-[var(--text-900)]">
+          <Typography sx={{ fontSize: 10 }}>Stake</Typography>
+        </MuiLink>
+        <MuiLink href="/redeem" underline="none" color="text.secondary" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, px: 1, '&:hover': { color: 'text.primary' } }}>
           <span aria-hidden>↩️</span>
-          <span className="text-[10px]">Redeem</span>
-        </a>
-      </div>
-    </nav>
-  )
+          <Typography sx={{ fontSize: 10 }}>Redeem</Typography>
+        </MuiLink>
+      </Box>
+    </Box>
+  );
 }

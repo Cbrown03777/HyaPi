@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { db, withTx } from '../services/db';
+import { maybeRouteExcessBuffer, bufferTargets } from '../services/buffer';
 import { platformCreateA2U } from '../services/piPlatform';
 
 export const stakingRouter = Router();
@@ -18,6 +19,11 @@ const DepositBody = z.object({
 const RedeemBody = z.object({
   amountPi: z.number().positive().finite(),
 });
+
+// Simple temporary price oracle accessor (evaluated at request time so tests can override via env)
+function getPiUsdPrice() {
+  return Number(process.env.PI_USD_PRICE ?? '0.35');
+}
 
 /** Helper: pick APY (bps) for a given lockup using apy_tiers table */
 async function pickApyBps(lockupWeeks: number): Promise<number> {
@@ -46,10 +52,10 @@ stakingRouter.post('/deposit', async (req: Request, res: Response) => {
     }
     const body = DepositBody.parse(req.body);
 
-    const apy_bps = await pickApyBps(body.lockupWeeks);
+  const apy_bps = await pickApyBps(body.lockupWeeks);
     const init_fee_bps = body.lockupWeeks === 0 ? 50 : 0;
 
-    const out = await withTx(async (tx: PoolClient) => {
+  const out = await withTx(async (tx: PoolClient) => {
       // 1) create stake
       const ins = await tx.query(
         `INSERT INTO stakes (user_id, amount_pi, lockup_weeks, apy_bps, init_fee_bps)
@@ -67,12 +73,20 @@ stakingRouter.post('/deposit', async (req: Request, res: Response) => {
         [user.userId, body.amountPi]
       );
 
-      // (optional) record an audit row here
+  // 3) Increase USD buffer notionally using temporary price oracle
+  const usdAmount = body.amountPi * getPiUsdPrice();
+  await tx.query(`UPDATE tvl_buffer SET buffer_usd = buffer_usd + $1, updated_at = now() WHERE id=1`, [usdAmount]);
+  await tx.query(`INSERT INTO liquidity_events(kind, amount_usd, tx_ref, idem_key) VALUES ('deposit',$1,$2,$3)`, [usdAmount, `stake:${ins.rows[0].id}`, (req as any).idemKey || null]);
+
+  // (optional) record an audit row here
 
       return ins.rows[0];
     });
 
-    const resp = { success: true, data: { stake: out } };
+  // Kick off async routing (non-blocking)
+  maybeRouteExcessBuffer().catch(()=>{});
+
+  const resp = { success: true, data: { stake: out } };
     await (res as any).saveIdem?.(resp);
     res.json(resp);
   } catch (e: any) {
@@ -94,7 +108,7 @@ stakingRouter.post('/redeem', async (req: Request, res: Response) => {
     if (!user?.userId) {
       return res.status(401).json({ success: false, error: { code: 'UNAUTH', message: 'missing user' } });
     }
-    const body = RedeemBody.parse(req.body);
+  const body = RedeemBody.parse(req.body);
     const amount = body.amountPi;
 
     const result = await withTx(async (tx: PoolClient) => {
@@ -128,8 +142,24 @@ stakingRouter.post('/redeem', async (req: Request, res: Response) => {
       const tre = await tx.query<{ buffer_pi: string }>(`SELECT buffer_pi::text FROM treasury WHERE id=true`);
       const buffer = Number(tre.rows[0]?.buffer_pi ?? 0);
 
-      if (buffer >= amount) {
-        // Instant payout path (MVP: just mark paid and reduce buffer)
+      // Mirror USD notionally 1 PI ~ 0.35 USD (TODO: price oracle) for tvl_buffer usage
+      const bufRow = await tx.query<{ buffer_usd:string }>(`SELECT buffer_usd FROM tvl_buffer WHERE id=1 FOR UPDATE`);
+      const bufferUsd = Number(bufRow.rows[0]?.buffer_usd ?? 0);
+  const withdrawUsd = amount * getPiUsdPrice();
+
+      // Determine surplus above target (if any) for buffer-first consumption
+  const vh = await tx.query<{ key:string; usd_notional:string }>(`SELECT key, usd_notional FROM venue_holdings`);
+  const deployedUsd = vh.rows.reduce((s,r)=> s + Number(r.usd_notional), 0);
+      const totalUsd = deployedUsd + bufferUsd;
+      const { target: bufTarget } = bufferTargets(totalUsd);
+      const surplus = Math.max(0, bufferUsd - bufTarget);
+      const useFromBufferUsd = Math.min(withdrawUsd, surplus || bufferUsd); // prefer surplus, allow dipping into target last resort
+
+      if (useFromBufferUsd >= withdrawUsd) {
+        // Fully satisfied from buffer
+        await tx.query(`UPDATE tvl_buffer SET buffer_usd = buffer_usd - $1, updated_at=now() WHERE id=1`, [withdrawUsd]);
+        await tx.query(`INSERT INTO liquidity_events(kind, amount_usd, tx_ref, idem_key) VALUES ('withdraw',$1,$2,$3)`, [withdrawUsd, 'redeem:instant-buffer', (req as any).idemKey||null]);
+        // Instant payout path (legacy treasury mirror)
         await tx.query(`UPDATE treasury SET buffer_pi = buffer_pi - $1, last_updated=now() WHERE id=true`, [amount]);
         const ins = await tx.query(
           `INSERT INTO redemptions (user_id, amount_pi, eta_ts, needs_unstake, status, updated_at)
@@ -165,7 +195,24 @@ stakingRouter.post('/redeem', async (req: Request, res: Response) => {
         }
         return { redemption: ins.rows[0], early_exit_fee_bps, path: 'instant' as const };
       } else {
-        // Queue path: estimate ETA (MVP: 21 days)
+        // Need venue withdrawals for remainder
+        const remainingUsd = withdrawUsd - useFromBufferUsd;
+        if (useFromBufferUsd > 0) {
+          await tx.query(`UPDATE tvl_buffer SET buffer_usd = buffer_usd - $1, updated_at=now() WHERE id=1`, [useFromBufferUsd]);
+          await tx.query(`INSERT INTO liquidity_events(kind, amount_usd, tx_ref, idem_key) VALUES ('withdraw',$1,$2,$3)`, [useFromBufferUsd, 'redeem:partial-buffer', (req as any).idemKey||null]);
+        }
+        // Proportional redeem plan (enqueue planned_actions + events)
+        if (remainingUsd > 0 && deployedUsd > 0) {
+          for (const r of vh.rows) {
+            const part = Number(r.usd_notional)/deployedUsd;
+            const redeemAmt = remainingUsd * part;
+            if (redeemAmt <= 0) continue;
+            const idem = `redeem:user:${user.userId}:${r.key}:${Date.now()}`;
+            await tx.query(`INSERT INTO planned_actions(kind, venue_key, amount_usd, reason, idem_key) VALUES ('redeem',$1,$2,'user_withdraw',$3) ON CONFLICT (idem_key) DO NOTHING`, [ r.key, redeemAmt, idem]);
+            await tx.query(`INSERT INTO liquidity_events(kind, amount_usd, venue_key, tx_ref) VALUES ('rebalance_out',$1,$2,$3)`, [redeemAmt, r.key, 'redeem:plan']);
+          }
+        }
+        // Queue path (await venue unwinds) – ETA heuristic
         const etaDays = 21;
         const eta = new Date(nowUtc().getTime() + etaDays * 24 * 60 * 60 * 1000);
         const ins = await tx.query(

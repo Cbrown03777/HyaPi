@@ -1,16 +1,33 @@
+import { Box, Typography, Paper } from '@mui/material';
+
 export default function AdminIndex() {
 	return (
-		<div className="max-w-screen-md mx-auto p-6 space-y-6">
-			<header>
-				<h1 className="text-2xl font-semibold">Admin</h1>
-				<p className="text-sm text-white/60 mt-1">Internal operational panels. Use navigation to access specific tools.</p>
-			</header>
-			<div className="grid gap-4 sm:grid-cols-2">
-				<a href="/admin/alloc" className="block rounded border border-white/15 bg-white/5 p-4 hover:border-white/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-500">
-					<h2 className="font-medium mb-1">Allocation Planner</h2>
-					<p className="text-xs text-white/60">Preview and simulate rebalances across venues.</p>
-				</a>
-			</div>
-		</div>
+		<Box sx={{ maxWidth: 860, mx: 'auto', py: 4, px: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 4 }}>
+			<Box component="header">
+				<Typography variant="h5" fontWeight={600}>Admin</Typography>
+				<Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Internal operational panels. Use navigation to access specific tools.</Typography>
+			</Box>
+			<Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
+				<Paper
+						component="a"
+						href="/admin/alloc"
+						variant="outlined"
+						sx={{
+							display: 'block',
+							p: 2.5,
+							textDecoration: 'none',
+							cursor: 'pointer',
+							borderRadius: 3,
+							background: 'linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0.10))',
+							transition: 'border-color .25s, box-shadow .25s',
+							'&:hover': { borderColor: 'primary.main', boxShadow: 4 },
+							'&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' }
+						}}
+					>
+						<Typography variant="subtitle1" fontWeight={600} sx={{ mb: 0.5 }}>Allocation Planner</Typography>
+						<Typography variant="caption" color="text.secondary">Preview and simulate rebalances across venues.</Typography>
+				</Paper>
+			</Box>
+		</Box>
 	);
 }

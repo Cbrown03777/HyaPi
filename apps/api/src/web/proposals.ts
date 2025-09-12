@@ -11,11 +11,7 @@ export const proposalsRouter = Router();
 const CreateSchema = z.object({
   title: z.string().min(3).max(140),
   description: z.string().optional(),
-  allocation: z.object({
-    sui: z.number().min(0).max(1),
-    aptos: z.number().min(0).max(1),
-    cosmos: z.number().min(0).max(1),
-  })
+  allocation: z.array(z.object({ key: z.string().min(2).max(64), weight: z.number().min(0).max(1) })).min(1).max(16)
 });
 
 // ---------- GET /v1/gov/proposals ----------
@@ -41,8 +37,8 @@ proposalsRouter.get('/proposals', async (req: Request, res: Response) => {
         p.status,
         p.start_ts,
         p.end_ts,
-        jsonb_object_agg(a.chain, a.weight_fraction)
-          FILTER (WHERE a.chain IS NOT NULL) AS allocation,
+        jsonb_object_agg(a.key, a.weight_fraction)
+          FILTER (WHERE a.key IS NOT NULL) AS allocation,
         t.for_power,
         t.against_power,
         t.abstain_power
@@ -68,9 +64,14 @@ proposalsRouter.get('/proposals', async (req: Request, res: Response) => {
 proposalsRouter.post('/proposals', async (req: Request, res: Response) => {
   try {
     const parsed = CreateSchema.parse(req.body);
-    const sum = parsed.allocation.sui + parsed.allocation.aptos + parsed.allocation.cosmos;
+    const sum = parsed.allocation.reduce((s,a)=>s + a.weight,0);
     if (Math.abs(sum - 1) > 1e-9) {
       return res.status(400).json({ success: false, error: { code: 'BAD_ALLOC', message: 'weights must sum to 1.0' } });
+    }
+    const seen = new Set<string>();
+    for (const a of parsed.allocation) {
+      if (seen.has(a.key)) return res.status(400).json({ success:false, error:{ code:'DUP_KEYS', message:`duplicate key ${a.key}` }});
+      seen.add(a.key);
     }
 
     const user = (req as any).user as { userId: number };
@@ -99,13 +100,18 @@ proposalsRouter.post('/proposals', async (req: Request, res: Response) => {
 
       await t.query(`INSERT INTO gov_tallies(proposal_id) VALUES ($1) ON CONFLICT DO NOTHING`, [proposalId]);
 
-      await t.query(/*sql*/`
-        INSERT INTO gov_proposal_allocations(proposal_id, chain, weight_fraction)
-        VALUES
-          ($1,'sui',$2),
-          ($1,'aptos',$3),
-          ($1,'cosmos',$4)
-      `, [proposalId, parsed.allocation.sui, parsed.allocation.aptos, parsed.allocation.cosmos]);
+      const values: any[] = [proposalId];
+      const rows: string[] = [];
+      parsed.allocation.forEach((a, i) => {
+        // push key then weight so parameter order is (proposal_id, key, weight) repeating
+        values.push(a.key, a.weight);
+        // placeholder indexes: $1 is proposal_id, then pairs start at $2
+        const keyIdx = 2 + i*2;
+        const weightIdx = 3 + i*2;
+        rows.push(`($1,$${keyIdx},$${weightIdx})`);
+      });
+      const sqlIns = `INSERT INTO gov_proposal_allocations(proposal_id, key, weight_fraction) VALUES ${rows.join(',')}`;
+      await t.query(sqlIns, values);
 
       return String(proposalId);
     });
@@ -167,7 +173,7 @@ proposalsRouter.get('/proposals/:id', async (req: Request, res: Response) => {
         p.quorum_met,
         p.passed,
         p.total_votes_power,
-        jsonb_object_agg(a.chain, a.weight_fraction) AS allocation,
+    jsonb_object_agg(a.key, a.weight_fraction) AS allocation,
         t.for_power,
         t.against_power,
         t.abstain_power
@@ -184,5 +190,18 @@ proposalsRouter.get('/proposals/:id', async (req: Request, res: Response) => {
   } catch (e: any) {
     console.error('proposals.detail error:', e);
     res.status(500).json({ success: false, error: { code: 'SERVER', message: e.message } });
+  }
+});
+
+// ---------- GET /v1/gov/config ----------
+// Front-end expects quorumVotes in either data.quorumVotes or data.quorum_votes.
+proposalsRouter.get('/config', async (_req: Request, res: Response) => {
+  try {
+    // Minimal placeholder until governance parameters are persisted.
+    const quorumVotes = Number(process.env.GOV_QUORUM_VOTES ?? 1000);
+    const votingPeriodSec = Number(process.env.GOV_VOTING_PERIOD_SEC ?? 3 * 24 * 3600); // 3 days default
+    res.json({ success: true, data: { quorumVotes, votingPeriodSec } });
+  } catch (e: any) {
+    res.status(500).json({ success:false, error:{ code:'SERVER', message:e.message }});
   }
 });

@@ -1,11 +1,56 @@
 // apps/api/src/services/alloc.ts
-import { db } from './db';
+import { db, withTx } from './db';
 import { getCompositeRates } from './gov';
 // NOTE: @hyapi/alloc currently exports computeTargets/planRebalance from source (ensure build ran)
 import { computeTargets, planRebalance } from '@hyapi/alloc';
 import type { Guardrails, GovWeights, Rate } from '@hyapi/alloc';
 
+// Load active allocation targets precedence: override -> gov -> legacy allocations_current mapping
+async function loadActiveTargets(): Promise<Record<string, number>> {
+  // Try overrides
+  const now = new Date();
+  const overrides = await db.query<{ key:string; weight_fraction:number }>(
+    `SELECT key, weight_fraction FROM allocation_targets
+      WHERE source='override' AND (expires_at IS NULL OR expires_at > now())
+      ORDER BY applied_at DESC`
+  );
+  if (overrides.rows.length) {
+    const total = overrides.rows.reduce((s,r)=>s + Number(r.weight_fraction||0),0) || 1;
+    const norm: Record<string, number> = {};
+    for (const r of overrides.rows) norm[r.key] = Number(r.weight_fraction)/total;
+    return norm;
+  }
+  const gov = await db.query<{ key:string; weight_fraction:number }>(
+    `SELECT key, weight_fraction FROM allocation_targets
+      WHERE source='gov'
+      ORDER BY applied_at DESC`
+  );
+  if (gov.rows.length) {
+    const latestByKey: Record<string, number> = {};
+    for (const r of gov.rows) {
+      if (!(r.key in latestByKey)) latestByKey[r.key] = Number(r.weight_fraction);
+    }
+    const total = Object.values(latestByKey).reduce((s,v)=>s+v,0) || 1;
+    for (const k of Object.keys(latestByKey)) latestByKey[k] = latestByKey[k]/total;
+    return latestByKey;
+  }
+  return {}; // fallback caller handles legacy mapping
+}
+
+export async function setOverrideTargets(weights: Record<string, number>, expiresAt?: Date|null) {
+  await withTx(async client => {
+    await client.query(`DELETE FROM allocation_targets WHERE source='override'`);
+    const entries = Object.entries(weights);
+    for (const [k,v] of entries) {
+      await client.query(`INSERT INTO allocation_targets (key, weight_fraction, source, expires_at) VALUES ($1,$2,'override',$3)`, [k, v, expiresAt ?? null]);
+    }
+  });
+}
+
 export async function loadGovWeights(): Promise<GovWeights> {
+  const active = await loadActiveTargets();
+  if (Object.keys(active).length) return active;
+  // legacy compatibility path
   const q = await db.query<{ chain: string; weight_fraction: number }>(
     `SELECT chain, weight_fraction FROM allocations_current`
   );
@@ -102,22 +147,25 @@ export async function savePlanAndMarkExecuted(preview: Awaited<ReturnType<typeof
 // Apply a set of absolute holdings (usd notionals) to the venue_holdings table.
 // Keys may include chain (venue:chain:market) or just (venue:market). We upsert each.
 export async function updateHoldings(next: Record<string, number>) {
+  // Replace semantics: the submitted set becomes the authoritative current holdings.
+  // Previous implementation only upserted provided keys causing stale rows to
+  // persist and inflate TVL when a new allocation “replaced” the prior one.
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    for (const [key, usd] of Object.entries(next)) {
-      await client.query(
-        `INSERT INTO venue_holdings(key, usd_notional) VALUES ($1,$2)
-         ON CONFLICT (key) DO UPDATE SET usd_notional = EXCLUDED.usd_notional, updated_at = now()`,
-        [key, usd]
-      );
+    // Wipe existing rows (acts as a point-in-time snapshot) then insert fresh set.
+    await client.query('DELETE FROM venue_holdings');
+    const entries = Object.entries(next);
+    for (const [key, usd] of entries) {
+      await client.query(`INSERT INTO venue_holdings(key, usd_notional) VALUES ($1,$2)`, [key, usd]);
     }
-    // Optionally zero out keys that disappeared (we keep them for history; skip deletion)
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
-  } finally { client.release(); }
+  } finally {
+    client.release();
+  }
 }
 
 // Allocation summary (current holdings × live rates → gross & net APY)
@@ -161,11 +209,31 @@ export async function allocationSummary() {
   }
   const totalGrossApy = totalUsd ? baskets.reduce((s,b)=> s + (b.grossApy ?? 0) * b.usd, 0) / totalUsd : 0;
   const totalNetApy = totalUsd ? baskets.reduce((s,b)=> s + (b.netApy ?? 0) * b.usd, 0) / totalUsd : 0;
+  // detect active source
+  let activeSource: 'override' | 'gov' | 'legacy' = 'legacy';
+  const overrideCount = await db.query(`SELECT 1 FROM allocation_targets WHERE source='override' AND (expires_at IS NULL OR expires_at > now()) LIMIT 1`);
+  if (overrideCount.rowCount) activeSource = 'override'; else {
+    const govCount = await db.query(`SELECT 1 FROM allocation_targets WHERE source='gov' LIMIT 1`);
+    if (govCount.rowCount) activeSource = 'gov';
+  }
+  // optionally include PPS & price if env provides
+  let pps: number | undefined; let priceUsdPerPi: number | undefined;
+  try {
+    const p = await db.query<{ pps_1e18: string }>(`SELECT pps_1e18 FROM v_pps_latest LIMIT 1`);
+    if (p.rowCount) pps = Number(p.rows[0].pps_1e18) / 1e18;
+  } catch {}
+  if (process.env.PI_USD_PRICE) {
+    const v = Number(process.env.PI_USD_PRICE);
+    if (Number.isFinite(v) && v>0) priceUsdPerPi = v;
+  }
   return {
     asOf: new Date().toISOString(),
     totalUsd,
     totalGrossApy,
     totalNetApy,
+    activeSource,
+    pps,
+    priceUsdPerPi,
     baskets: baskets.sort((a,b)=> (b.usd||0)-(a.usd||0))
   };
 }
@@ -202,7 +270,8 @@ export async function getAllocationHistory(limit = 200) {
 
 // Parse lock share curve from env: e.g. "0:0.20,3w:0.35,26w:0.60,52w:0.80,104w:0.90"
 export function loadLockShareCurve(): Array<{ weeks:number; share:number }> {
-  const raw = process.env.LOCK_SHARE_CURVE || '0:0.20,3w:0.35,26w:0.60,52w:0.80,104w:0.90';
+  // Default updated: 0w 50%, 3w 60%, 26w 70%, 52w 80%, 104w 90%
+  const raw = process.env.LOCK_SHARE_CURVE || '0:0.50,3w:0.60,26w:0.70,52w:0.80,104w:0.90';
   return raw.split(',').map(p=>p.trim()).filter(Boolean).map(seg => {
     const [wStr, sStr] = seg.split(':').map(x=>x.trim());
     let weeks = 0;

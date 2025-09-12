@@ -11,5 +11,15 @@ const nextConfig = {
       },
     ];
   },
+  // Override devtool in development to avoid Next.js default 'eval-source-map'
+  // which violates the Pi Browser CSP (blocks eval / unsafe-eval). This trades
+  // some recompilation speed for CSP compliance.
+  webpack(config, { dev }) {
+    if (dev) {
+      // 'cheap-module-source-map' generates external maps without wrapping modules in eval()
+      config.devtool = 'cheap-module-source-map';
+    }
+    return config;
+  },
 };
 export default nextConfig;
