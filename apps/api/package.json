@@ -4,6 +4,7 @@
   "description": "",
   "type": "commonjs",
   "scripts": {
+    "predev": "pnpm -w -r --filter @hyapi/alloc --filter @hyapi/venues build",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
   "test": "echo \"Error: no test specified\" && exit 1",
   "buffer:demo": "node src/scripts/buffer_flow_demo.cjs",

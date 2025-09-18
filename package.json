@@ -8,6 +8,18 @@
     "dev": "pnpm --filter @hyapi/api dev & pnpm --filter @hyapi/web dev",
     "check:no-pages": "node scripts/check-no-pages.cjs"
   },
+  "pnpm": {
+  "overrides": {
+    "@mui/material": "6.5.0",
+    "@mui/system": "6.5.0",
+    "@mui/icons-material": "6.5.0",
+    "@mui/utils": "6.4.9",
+    "@mui/types": "7.2.24",
+    "@mui/styled-engine": "6.5.0",
+    "@emotion/react": "11.14.0",
+    "@emotion/styled": "11.14.1"
+  }
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
