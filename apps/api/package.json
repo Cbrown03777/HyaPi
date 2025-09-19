@@ -4,10 +4,12 @@
   "description": "",
   "type": "commonjs",
   "scripts": {
+    "predev": "pnpm -w -r --filter @hyapi/alloc --filter @hyapi/venues build",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-  "test": "echo \"Error: no test specified\" && exit 1",
-  "buffer:demo": "node src/scripts/buffer_flow_demo.cjs",
-  "buffer:check": "node src/scripts/buffer_flow_check.cjs"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "buffer:demo": "node src/scripts/buffer_flow_demo.cjs",
+    "buffer:check": "node src/scripts/buffer_flow_check.cjs"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +19,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
+    "@hyapi/prices": "workspace:*",
   "axios": "^1.7.7",
   "stellar-sdk": "^12.1.1",
     "helmet": "^8.1.0",

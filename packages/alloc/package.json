@@ -6,7 +6,8 @@
 	"license": "MIT",
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"test": "node --test dist/__tests__/alloc.test.js"
+		"test": "node --test dist/__tests__/alloc.test.js",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
 	},
 	"dependencies": {
 		"zod": "^3.25.0"

@@ -3,10 +3,23 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "pnpm": {
+    "overrides": {
+      "@mui/material": "6.5.0",
+      "@mui/system": "6.5.0",
+      "@mui/icons-material": "6.5.0",
+      "@mui/styled-engine": "6.5.0",
+      "@mui/utils": "6.4.9",
+      "@emotion/react": "11.14.0",
+      "@emotion/styled": "11.14.1"
+    }
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "pnpm --filter @hyapi/api dev & pnpm --filter @hyapi/web dev",
-    "check:no-pages": "node scripts/check-no-pages.cjs"
+    "check:no-pages": "node scripts/check-no-pages.cjs",
+    "typecheck": "pnpm -r run typecheck",
+    "doctor": "tsx tools/doctor.ts"
   },
   "keywords": [],
   "author": "",
@@ -16,6 +29,7 @@
     "@types/node": "^24.3.0",
     "eslint": "^9.33.0",
     "prettier": "^3.6.2",
+    "tsx": "^4.19.1",
     "ts-node-dev": "^2.0.0",
     "turbo": "^2.5.6",
     "typescript": "^5.9.2"

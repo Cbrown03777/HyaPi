@@ -9,6 +9,8 @@ import { Inter } from 'next/font/google'
 import { PiInit } from '@/components/PiInit'
 import { PiBanner } from '@/components/PiBanner'
 import ThemeRegistry from '@/theme/ThemeRegistry';
+import dynamic from 'next/dynamic';
+const MUIVersionAndApiHealthGate = dynamic(() => import('@/components/MUIVersionAndApiHealthGate').then(m=>m.MUIVersionAndApiHealthGate), { ssr: false });
 import { AppBar, Box, Container, Link as MuiLink, Toolbar, Typography } from '@mui/material';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' })
@@ -31,6 +33,7 @@ export default function RootLayout({
       </head>
   <body className={`${inter.className}`}>
         <ThemeRegistry>
+          <MUIVersionAndApiHealthGate />
           <I18nProvider>
             {/* Initialize Pi SDK in client once available */}
             <PiInit />

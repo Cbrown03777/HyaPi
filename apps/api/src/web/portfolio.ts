@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../services/db';
+import { getPrices, type SupportedSymbol } from '@hyapi/prices';
 
 export const portfolioRouter = Router(); // <-- NAMED export
 
@@ -20,12 +21,25 @@ portfolioRouter.get('/', async (req: Request, res: Response) => {
     ]);
 
     const row = pView.rows[0] ?? { hyapi_amount: '0', pps_1e18: '1000000000000000000', effective_pi_value: '0' };
+
+    // Prices integration (guarded by PRICES_ENABLED)
+    let pricesBlock: any = { PI: 0, LUNA: 0, BAND: 0, JUNO: 0, ATOM: 0, TIA: 0, DAI: 0, lastUpdatedISO: new Date().toISOString(), degraded: true };
+    if (process.env.PRICES_ENABLED !== 'false') {
+      try {
+        const wanted: SupportedSymbol[] = ['PI','LUNA','BAND','JUNO','ATOM','TIA','DAI'];
+        const { prices, asOf, degraded } = await getPrices(wanted);
+        pricesBlock = { ...prices, lastUpdatedISO: asOf, degraded };
+      } catch {
+        // Keep degraded zeros on failure
+      }
+    }
     res.json({
       success: true,
       data: {
         hyapi_amount: row.hyapi_amount,
         pps_1e18: row.pps_1e18,
-        effective_pi_value: row.effective_pi_value,
+  effective_pi_value: row.effective_pi_value,
+  prices: pricesBlock,
   pps_series: ppsSeries.rows,
   has_locked_active: (locked.rows?.[0]?.cnt ?? 0) > 0,
   early_exit_fee_bps: (locked.rows?.[0]?.cnt ?? 0) > 0 ? 100 : 0

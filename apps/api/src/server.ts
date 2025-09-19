@@ -1,3 +1,8 @@
+/**
+ * Copilot: If "Cannot find module" errors occur for axios/zod/express/etc,
+ * suggest `pnpm -F @hyapi/api add <pkg>` and `pnpm -F @hyapi/api add -D <types>`.
+ * Do not touch client (web) deps or any @mui/* packages.
+ */
 import path from 'node:path';
 import dotenv from 'dotenv';
 // Load env from apps/api/.env explicitly so running from monorepo root still picks it up
@@ -67,7 +72,26 @@ const app = express();
 app.use(helmet({contentSecurityPolicy: false}));
 app.use(express.json());
 app.use(cors(corsOptions));
-app.get('/health', (_req,res)=>res.json({ ok:true, time:new Date().toISOString() })); // public
+// Public health endpoints
+app.get('/v1/health', (_req,res)=>{
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const pkg = require('../package.json');
+    return res.status(200).json({ ok: true, uptime: process.uptime(), version: pkg.version });
+  } catch {
+    return res.status(200).json({ ok: true, uptime: process.uptime(), version: '0.0.0' });
+  }
+});
+app.get('/v1/health/prices', async (_req, res) => {
+  try {
+    const { getPrices } = require('@hyapi/prices');
+    const { degraded } = await getPrices(['PI','LUNA','BAND','JUNO','ATOM','TIA','DAI'], { force: true });
+    return res.status(200).json({ ok: true, degraded });
+  } catch {
+    return res.status(200).json({ ok: false, degraded: true });
+  }
+});
+app.get('/health', (_req,res)=>res.json({ ok:true, time:new Date().toISOString() })); // legacy public
 // Public venues rates and public alloc history before auth
 app.use('/v1/venues', venuesRouter);
 app.use('/v1/alloc', allocGovPublicRouter);
