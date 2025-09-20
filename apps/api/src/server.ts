@@ -22,6 +22,7 @@ import { piRouter } from './web/pi';
 import { metadataRouter } from './web/metadata';
 import { allocRouter, allocGovPublicRouter } from './web/alloc';
 import { allocCurrentRouter } from './web/alloc_current';
+import { adminAllocatorRouter } from './web/adminAllocator';
 import { venuesRouter } from './web/venues';
 import { walletRouter } from './web/wallet';
 
@@ -135,6 +136,7 @@ app.use('/v1/pi', auth, piRouter);
 app.use('/v1/metadata', metadataRouter);
 app.use('/v1/alloc', auth, allocRouter);
 app.use('/v1/alloc', auth, allocCurrentRouter);
+app.use('/v1/admin/allocator', auth, adminAllocatorRouter);
 // Public venues rates (no bearer required) – mount before auth
 // (Already mounted publicly above)
 

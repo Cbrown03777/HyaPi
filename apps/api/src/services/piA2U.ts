@@ -1,5 +1,5 @@
 import axios from 'axios';
-import * as StellarSdk from 'stellar-sdk';
+import StellarSdk from 'stellar-sdk';
 
 type CreateA2UInput = {
   uid: string;

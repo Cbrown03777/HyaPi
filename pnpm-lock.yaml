@@ -44,6 +44,9 @@ importers:
       '@hyapi/prices':
         specifier: workspace:*
         version: link:../../packages/prices
+      '@hyapi/venues':
+        specifier: workspace:*
+        version: link:../../packages/venues
       axios:
         specifier: ^1.7.7
         version: 1.11.0

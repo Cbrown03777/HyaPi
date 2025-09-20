@@ -20,6 +20,7 @@
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "@hyapi/prices": "workspace:*",
+    "@hyapi/venues": "workspace:*",
   "axios": "^1.7.7",
   "stellar-sdk": "^12.1.1",
     "helmet": "^8.1.0",
