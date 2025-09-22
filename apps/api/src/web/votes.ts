@@ -3,6 +3,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { db, withTx } from '../services/db';
+import { getBoostForUser } from '../gov/boost';
 
 export const votesRouter = Router();
 
@@ -41,8 +42,17 @@ votesRouter.post('/:id/votes', async (req: Request, res: Response) => {
         .json({ success: false, error: { code: 'NO_POWER', message: 'no voting power' } });
     }
 
+    // Base voting power from hyaPi balance
+    let powerDecimal = amount; // base units
+    // Apply boosted governance multiplier (does not affect APY)
+    try {
+      const boost = await getBoostForUser(String(user.userId));
+      if (boost.active && boost.boostPct > 0) {
+        powerDecimal = powerDecimal * (1 + boost.boostPct);
+      }
+    } catch {}
     // Scale to integer units (store in NUMERIC(78,0))
-    const votingPower = BigInt(Math.floor(amount * 1e18)).toString();
+    const votingPower = BigInt(Math.floor(powerDecimal * 1e18)).toString();
     const supportCode = SUPPORT_CODE[body.support];
 
     await withTx(async (t: PoolClient) => {

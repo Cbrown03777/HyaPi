@@ -32,6 +32,7 @@ import {
   Chip
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+// No need to fetch boost config for ranges; use local rules per product spec.
 
 // Stake Page (MUI refactor)
 
@@ -51,6 +52,14 @@ export default function StakePage() {
   const [balance, setBalance] = useState<number>(1000);
   const toast = useToast();
   const activity = useActivity();
+  // Voting boost by lockup duration (affects voting power only; APY unchanged)
+  function computeBoostPctByWeeks(w: number): number {
+    if (w >= 104) return 0.50;      // 104 weeks → +50%
+    if (w >= 52) return 0.35;       // 52–103 weeks → +35%
+    if (w >= 26) return 0.20;       // 26–51 weeks → +20%
+    return 0.0;                     // <26 weeks → no boost
+  }
+  const selectedBoostPct = computeBoostPctByWeeks(weeks);
 
   // Load auth, balances, APYs, curve
   useEffect(() => {
@@ -74,9 +83,8 @@ export default function StakePage() {
       // Fetch allocation summary + lock curve
       try {
         const client = axios.create({ baseURL: GOV_API_BASE, headers: { Authorization: `Bearer ${t}` } });
-        const [sumRes, curveRes] = await Promise.allSettled([
-          client.get('/v1/alloc/summary'),
-          client.get('/v1/alloc/lock-curve')
+        const [sumRes] = await Promise.allSettled([
+          client.get('/v1/alloc/summary')
         ]);
         // Fetch EMA separately so we can display same net APY as home
         try {
@@ -87,32 +95,16 @@ export default function StakePage() {
           setBaseNetApy(sumRes.value.data.data?.totalNetApy || 0);
           setBaseGrossApy(sumRes.value.data.data?.totalGrossApy || 0);
         }
-        if (curveRes.status === 'fulfilled' && curveRes.value.data?.success) {
-          setLockCurve(curveRes.value.data.data || []);
-        }
+        // per-user APY scaling removed: ignore lock curve
       } catch { /* silent */ }
     })();
   }, []);
 
   // lock share curve from server (piecewise step) with fallback defaults if absent yet
-  const lockScale = (w: number) => {
-    if (lockCurve && lockCurve.length) {
-      let s = lockCurve[0]?.share ?? 0;
-      for (const pt of lockCurve) {
-        if (w >= pt.weeks) s = pt.share; else break;
-      }
-      return s;
-    }
-    if (w >= 104) return 0.90;
-    if (w >= 52) return 0.80;
-    if (w >= 26) return 0.70;
-    if (w >= 3) return 0.60;
-    return 0.50;
-  };
   const baseDisplayed = showGross ? baseGrossApy : baseNetApy;
-  const userScaledApy = baseDisplayed * lockScale(weeks);
-  // (Removed incremental delta display; only showing absolute APY now)
-  const baselineApy = baseDisplayed * lockScale(0);
+  // Per-user APY scaling removed: APY is protocol-wide only
+  const userScaledApy = baseDisplayed;
+  const baselineApy = baseDisplayed;
   // Platform Net APY (smoothed to match Home when available)
   const platformNetApy = emaNetApy ?? baseNetApy; // decimal
 
@@ -184,7 +176,6 @@ export default function StakePage() {
 
   const lockMarks = [
     { value: 0, label: '0w' },
-    { value: 3, label: '3w' },
     { value: 26, label: '26w' },
     { value: 52, label: '52w' },
     { value: 104, label: '104w' }
@@ -246,15 +237,7 @@ export default function StakePage() {
               <Tooltip
                 title={
                   <Box sx={{ fontSize: 12, lineHeight: 1.3 }}>
-                    Share of base APY increases with lock duration:
-                    <ul style={{ paddingLeft: 16, marginTop: 4 }}>
-                      <li>0 weeks: 50%</li>
-                      <li>3 weeks: 60%</li>
-                      <li>26 weeks: 70%</li>
-                      <li>52 weeks: 80%</li>
-                      <li>104 weeks: 90%</li>
-                    </ul>
-                    Early exit fee 1%. No-lock deposits pay 0.5% entry fee.
+                    APY is global and not affected by lock length. Early exit before expiry incurs 1% principal fee. No‑lock deposits charged 0.5% entry fee.
                   </Box>
                 }
                 placement="top"
@@ -296,8 +279,13 @@ export default function StakePage() {
                     />
                   </Box>
                   <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
-                    <Typography variant="body2">Your Share (at {weeks}w, {(lockScale(weeks) * 100).toFixed(0)}% of base):</Typography>
+                    <Typography variant="body2">Protocol {showGross ? 'Gross' : 'Net'} APY:</Typography>
                     <Typography fontWeight={600} fontSize={14}>{(apy * 100).toFixed(2)}%</Typography>
+                  </Box>
+                  <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                    <Typography variant="body2">Governance voting boost (for {weeks}‑week lock):</Typography>
+                    <Chip size="small" color={selectedBoostPct>0? 'secondary':'default'} label={`Boost +${Math.round(selectedBoostPct * 100)}%`} sx={{ height: 20 }} />
+                    <Typography variant="caption" sx={{ opacity: 0.7 }}>(affects voting power only; APY unchanged)</Typography>
                   </Box>
                   <Typography variant="caption" sx={{ opacity: 0.65 }}>
                     Early exit before expiry incurs 1% principal fee. No‑lock deposits charged 0.5% upfront entry fee.
@@ -363,14 +351,14 @@ export default function StakePage() {
           <Stack spacing={1} fontSize={14}>
             <Stack direction="row" justifyContent="space-between"><span>Amount</span><span>{fmtNumber(amt)} Pi</span></Stack>
             <Stack direction="row" justifyContent="space-between"><span>Lockup</span><span>{weeks} weeks</span></Stack>
-            <Stack direction="row" justifyContent="space-between"><span>Platform {showGross ? 'Gross' : 'Net'} APY</span><span>{baseDisplayed ? (baseDisplayed * 100).toFixed(2) + '%' : '—'}</span></Stack>
-            <Stack direction="row" justifyContent="space-between"><span>Your Share</span><span>{(apy * 100).toFixed(2)}%</span></Stack>
+            <Stack direction="row" justifyContent="space-between"><span>Protocol {showGross ? 'Gross' : 'Net'} APY</span><span>{baseDisplayed ? (baseDisplayed * 100).toFixed(2) + '%' : '—'}</span></Stack>
+            <Stack direction="row" justifyContent="space-between"><span>Effective APY</span><span>{(apy * 100).toFixed(2)}%</span></Stack>
             <Stack direction="row" justifyContent="space-between"><span>Early Exit Fee</span><span>1%</span></Stack>
             {weeks === 0 && (
               <Stack direction="row" justifyContent="space-between"><span>Entry Fee</span><span>0.5%</span></Stack>
             )}
-            <Stack direction="row" justifyContent="space-between"><span>Share Factor</span><span>{(lockScale(weeks) * 100).toFixed(0)}%</span></Stack>
             <Stack direction="row" justifyContent="space-between"><span>Est. hyaPi after period</span><span>{fmtNumber(estFinal)}</span></Stack>
+            <Stack direction="row" justifyContent="space-between"><span>Governance voting boost</span><span>+{Math.round(selectedBoostPct * 100)}%</span></Stack>
             {!((globalThis as any).Pi) && (
               <Alert severity="info" variant="outlined" sx={{ mt: 1 }}>
                 Open in Pi Browser to complete a real Testnet payment. In local dev we simulate the deposit.

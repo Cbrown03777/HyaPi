@@ -25,15 +25,14 @@ function getPiUsdPrice() {
   return Number(process.env.PI_USD_PRICE ?? '0.35');
 }
 
-/** Helper: pick APY (bps) for a given lockup using apy_tiers table */
-async function pickApyBps(lockupWeeks: number): Promise<number> {
+/** Helper: pick global APY (bps) – per-user scaling removed. */
+async function pickApyBps(_lockupWeeks: number): Promise<number> {
   const q = await db.query<{ apy_bps: number }>(
     `SELECT apy_bps
        FROM apy_tiers
-      WHERE min_weeks <= $1
+      WHERE min_weeks <= 0
       ORDER BY min_weeks DESC
-      LIMIT 1`,
-    [lockupWeeks]
+      LIMIT 1`
   );
   return q.rows[0]?.apy_bps ?? 500; // default 5% if tiers missing
 }

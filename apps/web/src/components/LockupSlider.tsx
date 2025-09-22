@@ -7,11 +7,10 @@ import { Card, CardContent, Typography, Slider, Box, Stack, Tooltip } from '@mui
 type Tier = { weeks: number; label: string }
 const TIERS: Tier[] = [
   { weeks: 0,   label: 'No lock' },
-  { weeks: 3,   label: '3 wks'  },
   { weeks: 26,  label: '6 mo'   },
   { weeks: 52,  label: '12 mo'  },
   { weeks: 104, label: '24 mo'  },
-]
+];
 
 type Props = {
   valueWeeks: number;

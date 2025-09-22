@@ -25,10 +25,13 @@ import { allocCurrentRouter } from './web/alloc_current';
 import { adminAllocatorRouter } from './web/adminAllocator';
 import { venuesRouter } from './web/venues';
 import { walletRouter } from './web/wallet';
+import { manualActionsRouter } from './web/manualActions';
+import { govBoostRouter, govBoostPublicRouter } from './web/govBoost';
 
 import { auth } from './web/middleware/auth';
 import { idempotency } from './web/middleware/idempotency';
 import { ensurePiIntegration, ensureBootstrap } from './services/bootstrap';
+import { clearApyScalingFlags } from './data/govRepo';
 import { runMigrations } from './services/migrate';
 import { startPiPayoutWorker } from './services/piPayoutWorker';
 import { recordAllocationSnapshot } from './services/alloc';
@@ -96,6 +99,8 @@ app.get('/health', (_req,res)=>res.json({ ok:true, time:new Date().toISOString()
 // Public venues rates and public alloc history before auth
 app.use('/v1/venues', venuesRouter);
 app.use('/v1/alloc', allocGovPublicRouter);
+// Public governance config (boost terms)
+app.use('/v1/gov', govBoostPublicRouter);
 // NOTE: /v1/venues mounted earlier (public). Everything after this requires auth.
 app.use(auth);
 app.use(idempotency);
@@ -127,6 +132,7 @@ app.use('/v1/gov', auth);
 app.use('/v1/gov', auth, proposalsRouter);
 app.use('/v1/gov', auth, votesRouter);
 app.use('/v1/gov', auth, finalizeRouter);
+app.use('/v1/gov', auth, govBoostRouter);
 app.use('/v1/gov/execution', auth, executeRouter);
 app.use('/v1/wallet', auth, walletRouter);
 app.use('/v1/stake', auth, stakingRouter);
@@ -137,6 +143,7 @@ app.use('/v1/metadata', metadataRouter);
 app.use('/v1/alloc', auth, allocRouter);
 app.use('/v1/alloc', auth, allocCurrentRouter);
 app.use('/v1/admin/allocator', auth, adminAllocatorRouter);
+app.use('/v1/admin', auth, manualActionsRouter);
 // Public venues rates (no bearer required) – mount before auth
 // (Already mounted publicly above)
 
@@ -147,6 +154,7 @@ app.listen(port, async () => {
   try { await runMigrations(); } catch (e:any) { console.error('migration error', e?.message); }
   try { await ensurePiIntegration(); } catch (e: any) { console.error('pi bootstrap error', e?.message); }
   try { await ensureBootstrap(); } catch (e:any) { console.error('alloc bootstrap error', e?.message); }
+  try { await clearApyScalingFlags(); } catch (e:any) { console.error('clear apy flags error', e?.message); }
   // Start background worker to track A2U payouts
   try { startPiPayoutWorker(); } catch (e: any) { console.error('payout worker start error', e?.message); }
 });

@@ -18,6 +18,12 @@ import {
 } from '@mui/material';
 import LaunchIcon from '@mui/icons-material/Launch';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import { useBoostConfig, useBoostMe, useCreateLock } from '@/hooks/useGovBoost';
+import TextField from '@mui/material/TextField';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
 
 export type Proposal = {
   id: string | number;
@@ -87,6 +93,12 @@ export default function GovernanceClient() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [quorum, setQuorum] = useState<string | null>(null);
+  const boostCfg = useBoostConfig();
+  const boostMe = useBoostMe();
+  const createLock = useCreateLock();
+  const [lockWeeks, setLockWeeks] = useState<26|52|104|0>(0);
+  const [txUrl, setTxUrl] = useState('');
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,18 +149,25 @@ export default function GovernanceClient() {
     }
     if (error) return <Alert severity="error" variant="outlined">{error}</Alert>;
     if (!proposals.length) return <Alert severity="info" variant="outlined">No proposals yet. Be the first to create one.</Alert>;
+    const boostPct = boostMe.data?.data?.active ? (boostMe.data?.data?.boostPct || 0) : 0;
     return (
       <Stack spacing={2}>
         {proposals.map(p => {
+          // Show on-chain/community tallies as-is; boost applies to YOUR vote weight only.
           const forV = formatBig(p.for_votes);
-            const againstV = formatBig(p.against_votes);
-            const abstainV = formatBig(p.abstain_votes);
+          const againstV = formatBig(p.against_votes);
+          const abstainV = formatBig(p.abstain_votes);
           return (
             <Card key={p.id} variant="outlined" aria-labelledby={`proposal-${p.id}-title`} sx={{ position: 'relative' }}>
               <CardHeader
                 titleTypographyProps={{ variant: 'subtitle1', fontWeight: 600 }}
                 title={<span id={`proposal-${p.id}-title`}>{p.title}</span>}
-                action={<Chip size="small" label={p.status} color={statusChipColor(p.status) as any} sx={{ textTransform: 'capitalize' }} aria-label={`Status ${p.status}`} />}
+                action={<Stack direction="row" spacing={1} alignItems="center">
+                  {boostPct > 0 && (
+                    <Chip size="small" color="secondary" label={`Boost +${Math.round(boostPct*100)}%`} aria-label={`Your voting power is boosted by ${Math.round(boostPct*100)} percent`} />
+                  )}
+                  <Chip size="small" label={p.status} color={statusChipColor(p.status) as any} sx={{ textTransform: 'capitalize' }} aria-label={`Status ${p.status}`} />
+                </Stack>}
               />
               <CardContent sx={{ pt: 0 }}>
                 <Stack spacing={1.2}>
@@ -176,6 +195,39 @@ export default function GovernanceClient() {
     );
   }, [loading, error, proposals, quorum]);
 
+  const boostCard = (
+    <Card variant="outlined">
+      <CardHeader title={<Typography variant="subtitle2" fontWeight={600}>Boosted Governance</Typography>} />
+      <CardContent sx={{ pt: 0 }}>
+        <Stack spacing={2}>
+          <Typography variant="caption" sx={{ opacity: 0.75 }}>
+            Boost increases your voting power only; yield/APY is unaffected.
+          </Typography>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            {[26,52,104].map((w) => (
+              <Button key={w} size="small" variant={lockWeeks===w? 'contained':'outlined'} onClick={()=>setLockWeeks(w as 26|52|104)}>
+                {w} weeks
+              </Button>
+            ))}
+          </Stack>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <Typography variant="body2">Your current boost:</Typography>
+            <Chip size="small" label={boostMe.data?.data?.active ? `+${Math.round((boostMe.data?.data?.boostPct||0)*100)}%` : 'None'} />
+            {boostMe.data?.data?.active && boostMe.data?.data?.unlockAt && (
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>until {new Date(boostMe.data.data.unlockAt).toLocaleDateString()}</Typography>
+            )}
+          </Stack>
+          <Stack direction="row" spacing={1}>
+            <Button size="small" variant="contained" disabled={!lockWeeks} onClick={()=> setOpen(true)}>Activate lock</Button>
+            <Button size="small" variant="outlined" onClick={()=> boostMe.refetch()}>Refresh</Button>
+            <Box flex={1} />
+            <Button size="small" variant="text" onClick={()=> window.open('/docs/boost', '_blank')}>Learn more</Button>
+          </Stack>
+        </Stack>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <Box display="flex" flexDirection={{ xs: 'column', lg: 'row' }} gap={4} alignItems="flex-start">
       <Box flex={1} minWidth={0}>
@@ -186,6 +238,7 @@ export default function GovernanceClient() {
         {content}
       </Box>
       <Box width={{ xs: '100%', lg: 320 }} flexShrink={0} display="flex" flexDirection="column" gap={3}>
+        {boostCard}
         <Card variant="outlined">
           <CardContent>
             <Stack spacing={2}>
@@ -218,6 +271,26 @@ export default function GovernanceClient() {
           </CardContent>
         </Card>
       </Box>
+      <Dialog open={open} onClose={()=>setOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Activate governance lock</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Typography variant="body2">Lock term: <b>{lockWeeks} weeks</b></Typography>
+            <TextField label="Optional Tx URL" placeholder="https://..." fullWidth value={txUrl} onChange={(e)=> setTxUrl(e.target.value)} />
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>This reference helps trace your on-chain or internal action.</Typography>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="outlined" onClick={()=> setOpen(false)}>Cancel</Button>
+          <Button variant="contained" disabled={!lockWeeks || createLock.loading} onClick={async ()=>{
+            try {
+              await createLock.mutate(lockWeeks as 26|52|104, txUrl || undefined);
+              setOpen(false); setTxUrl('');
+              await boostMe.refetch();
+            } catch {}
+          }}>Confirm</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

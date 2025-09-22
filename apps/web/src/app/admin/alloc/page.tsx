@@ -34,6 +34,8 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import SettingsBackupRestoreIcon from '@mui/icons-material/SettingsBackupRestore';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import Modal from '@mui/material/Modal';
+import { useManualActions } from '@/hooks/useManualActions';
 
 interface RateRow { venue:string; chain:string; market:string; baseApr:number; baseApy?:number; rewardApr?:number; rewardApy?:number; rewardMeritApr?:number; rewardSelfApr?:number; asOf:string; }
 interface Holding { key:string; usd:number }
@@ -288,10 +290,45 @@ export default function AllocationPlanner() {
 			], []);
 			const colorFor = useCallback((k:string, idx:number)=> palette[idx % palette.length], [palette]);
 
+				// Manual Actions state
+				const { data: planned, loading: plannedLoading, error: plannedError, refresh: refreshPlanned, confirm: confirmPlanned } = useManualActions('Planned');
+				const [confirmOpen, setConfirmOpen] = useState(false);
+				const [confirmId, setConfirmId] = useState<string|undefined>();
+				const [avgPriceUSD, setAvgPriceUSD] = useState<string>('');
+				const [feeUSD, setFeeUSD] = useState<string>('0');
+				const [txUrl, setTxUrl] = useState<string>('');
+				const [idemKey, setIdemKey] = useState<string>('');
+				const [confirmBusy, setConfirmBusy] = useState(false);
+				const selected = useMemo(()=> planned.find(p=> p.id===confirmId), [planned, confirmId]);
+				const usdImpact = useMemo(()=>{
+					const a = Number(selected?.amountPI || 0) * Number(avgPriceUSD || 0);
+					const f = Number(feeUSD || 0);
+					return a - f;
+				}, [selected, avgPriceUSD, feeUSD]);
+				function openConfirm(id:string){
+					setConfirmId(id); setConfirmOpen(true);
+					const row = planned.find(p=>p.id===id);
+					if (row) setIdemKey(row.id);
+				}
+				function closeConfirm(){ setConfirmOpen(false); setConfirmId(undefined); setAvgPriceUSD(''); setFeeUSD('0'); setTxUrl(''); setIdemKey(''); }
+				const canSubmit = Number(avgPriceUSD)>0 && Number(feeUSD)>=0 && /^https?:\/\//.test(txUrl);
+				async function submitConfirm(){
+					if (!confirmId) return;
+					setConfirmBusy(true);
+					try {
+						await confirmPlanned(confirmId, { avgPriceUSD: Number(avgPriceUSD), feeUSD: Number(feeUSD||0), txUrl, idempotencyKey: (idemKey || selected?.id || '') });
+						toast.success('Confirmed');
+						closeConfirm();
+						refreshPlanned();
+					} catch (e:any) { toast.error(e.message || 'confirm failed'); }
+					finally { setConfirmBusy(false); }
+				}
+
 	return (
 		<Box maxWidth="lg" mx="auto" px={{ xs:2, md:4 }} py={4} display="flex" flexDirection="column" gap={4}>
 			{/* TVL & Buffer Strip */}
 			{current && (
+				<>
 				<Paper variant="outlined" sx={{ p:2 }}>
 					<Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems={{ xs:'flex-start', md:'center' }} justifyContent="space-between">
 						<Stack direction="row" spacing={3} flexWrap="wrap">
@@ -352,6 +389,63 @@ export default function AllocationPlanner() {
 						</Stack>
 					</Box>
 				</Paper>
+
+				{/* Manual Actions Queue */}
+				<Paper variant="outlined" sx={{ p:2 }}>
+					<Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+						<Typography variant="h6">Manual Actions Queue</Typography>
+						<IconButton onClick={()=> refreshPlanned()}><RefreshIcon/></IconButton>
+					</Stack>
+					{plannedError && <Alert severity="warning">{plannedError}</Alert>}
+					<TableContainer component={Paper} variant="outlined">
+						<Table size="small">
+							<TableHead>
+								<TableRow>
+									<TableCell>ID</TableCell><TableCell>Venue</TableCell><TableCell align="right">Amount (PI)</TableCell><TableCell>Status</TableCell><TableCell>Created</TableCell><TableCell>Note</TableCell><TableCell align="right">Actions</TableCell>
+								</TableRow>
+							</TableHead>
+							<TableBody>
+								{planned.map(r => (
+									<TableRow key={r.id}>
+										<TableCell sx={{ fontFamily:'monospace' }}>{r.id}</TableCell>
+										<TableCell>{r.venue}</TableCell>
+										<TableCell align="right">{r.amountPI.toLocaleString()}</TableCell>
+										<TableCell>{r.status}</TableCell>
+										<TableCell>{timeago(r.createdAt)}</TableCell>
+										<TableCell>{r.note || ''}</TableCell>
+										<TableCell align="right"><Button size="small" variant="contained" onClick={()=> openConfirm(r.id)}>Confirm</Button></TableCell>
+									</TableRow>
+								))}
+								{planned.length===0 && (
+									<TableRow>
+										<TableCell colSpan={7} align="center">{plannedLoading ? <CircularProgress size={20}/> : 'No planned actions'}</TableCell>
+									</TableRow>
+								)}
+							</TableBody>
+						</Table>
+					</TableContainer>
+				</Paper>
+
+				<Modal open={confirmOpen} onClose={closeConfirm}>
+					<Box sx={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%, -50%)', width:{ xs:'90%', sm:480 }, bgcolor:'background.paper', border:'1px solid rgba(255,255,255,0.1)', borderRadius:2, p:2 }}>
+						<Typography variant="h6" sx={{ mb:1 }}>Confirm Fill</Typography>
+						{selected && (
+							<Box sx={{ display:'flex', flexDirection:'column', gap:1 }}>
+								<Typography variant="body2">Action: {selected.id} • {selected.venue} • {selected.amountPI.toLocaleString()} PI</Typography>
+								<TextField label="Avg Price USD" type="number" value={avgPriceUSD} onChange={e=> setAvgPriceUSD(e.target.value)} fullWidth />
+								<TextField label="Fee USD" type="number" value={feeUSD} onChange={e=> setFeeUSD(e.target.value)} fullWidth />
+								<TextField label="Tx URL" value={txUrl} onChange={e=> setTxUrl(e.target.value)} fullWidth />
+								<TextField label="Idempotency Key (optional)" value={idemKey} onChange={e=> setIdemKey(e.target.value)} fullWidth />
+								<Typography variant="body2" sx={{ opacity:0.7 }}>USD impact preview: {formatUSD(usdImpact)}</Typography>
+								<Stack direction="row" gap={1} justifyContent="flex-end" sx={{ mt:1 }}>
+									<Button onClick={closeConfirm}>Cancel</Button>
+									<Button variant="contained" disabled={!canSubmit || confirmBusy} onClick={submitConfirm}>{confirmBusy? 'Working…' : 'Confirm'}</Button>
+								</Stack>
+							</Box>
+						)}
+					</Box>
+				</Modal>
+				</>
 			)}
 			<GovAllocationHistoryChart className="" limit={150} />
 			<Box>

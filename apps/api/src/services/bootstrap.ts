@@ -35,4 +35,17 @@ export async function ensureBootstrap() {
     // If table doesn't exist yet, swallow (migration not applied) – run after migrations in server.
     if (!/relation \"tvl_buffer\" does not exist/i.test(e?.message ?? '')) throw e;
   }
+  
+  // Governance locks (for boosted governance)
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS governance_locks (
+        user_id TEXT PRIMARY KEY,
+        term_weeks INTEGER NOT NULL CHECK (term_weeks IN (26,52,104)),
+        locked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        unlock_at TIMESTAMPTZ NOT NULL,
+        tx_url TEXT
+      )
+    `);
+  } catch {}
 }
