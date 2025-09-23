@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useState } from 'react';
-import { GOV_API_BASE } from '@hyapi/shared';
 import Link from 'next/link';
 import {
   Box,
@@ -14,9 +13,9 @@ import {
   Alert,
   Skeleton,
   Divider,
-  Tooltip
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
-import LaunchIcon from '@mui/icons-material/Launch';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import { useBoostConfig, useBoostMe, useCreateLock } from '@/hooks/useGovBoost';
 import TextField from '@mui/material/TextField';
@@ -24,25 +23,12 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
+import { useGovProposals } from '@/hooks/useGovProposals';
+import ProposalCard from '@/components/gov/ProposalCard';
+import { GOV_API_BASE } from '@hyapi/shared';
 
-export type Proposal = {
-  id: string | number;
-  title: string;
-  status: string;
-  created_ts?: number;
-  for_votes?: string | number;
-  against_votes?: string | number;
-  abstain_votes?: string | number;
-  allocation?: Array<{ key: string; weight: number }>;
-};
-
-const allocColors: Record<string, string> = {
-  aave: '#B6509E',
-  justlend: '#4F9CFD',
-  stride: '#6DD3B7',
-  lido: '#00A3FF',
-  rocket: '#FF8A00',
-};
+// colors kept in case allocation bar is reintroduced later
+const allocColors: Record<string, string> = { aave:'#B6509E', justlend:'#4F9CFD', stride:'#6DD3B7', lido:'#00A3FF', rocket:'#FF8A00' };
 
 function formatBig(v: any): string {
   if (v === null || v === undefined) return '0';
@@ -55,43 +41,10 @@ function formatBig(v: any): string {
   return n.toString();
 }
 
-function statusChipColor(status: string) {
-  switch (status) {
-    case 'active': return 'success';
-    case 'finalized': return 'warning';
-    case 'executed': return 'default';
-    case 'pending': return 'info';
-    default: return 'default';
-  }
-}
-
-function AllocationBar({ allocation }: { allocation?: Proposal['allocation'] }) {
-  if (!allocation || !allocation.length) return <Typography variant="caption" sx={{ opacity: 0.6 }}>No allocation changes</Typography>;
-  const total = allocation.reduce((a, b) => a + (b.weight || 0), 0) || 1;
-  return (
-    <Box aria-label="Allocation target weights" sx={{ display: 'flex', width: '100%', height: 10, borderRadius: 5, overflow: 'hidden', outline: '1px solid rgba(255,255,255,0.08)' }}>
-      {allocation.map(seg => {
-        const prefix: string = (seg.key || '').split(':')[0] || 'other';
-        const color = allocColors[prefix] || '#444';
-        const pct = (seg.weight / total) * 100;
-        return (
-          <Tooltip key={seg.key} title={`${seg.key} ${(seg.weight * 100).toFixed(1)}%`} arrow placement="top">
-            <Box
-              component="span"
-              sx={{ flex: `${pct} 0 0`, background: color, display: 'inline-block' }}
-              aria-label={`${seg.key} ${(seg.weight * 100).toFixed(1)} percent`}
-            />
-          </Tooltip>
-        );
-      })}
-    </Box>
-  );
-}
+// Allocation bar removed in this iteration (list cards contain their own progress UI)
 
 export default function GovernanceClient() {
-  const [loading, setLoading] = useState(true);
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<'All'|'Open'|'Closed'>('All');
   const [quorum, setQuorum] = useState<string | null>(null);
   const boostCfg = useBoostConfig();
   const boostMe = useBoostMe();
@@ -100,44 +53,39 @@ export default function GovernanceClient() {
   const [txUrl, setTxUrl] = useState('');
   const [open, setOpen] = useState(false);
 
+  const proposalsQuery = useGovProposals({ status, pageSize: 20 });
+
+  const loading = proposalsQuery.isLoading || proposalsQuery.isFetching && !proposalsQuery.data;
+  const error = proposalsQuery.error as any;
+  const items = proposalsQuery.items as any[];
+
+  // Fetch quorum config (unchanged from previous)
+  // Defer to client; keep it simple and avoid SSR
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
-        setLoading(true);
-        setError(null);
-        const res = await fetch(`${GOV_API_BASE}/v1/gov/proposals`, { cache: 'no-store' }).catch(()=>null);
-        let list: Proposal[] = [];
-        if (res && res.ok) {
-          const json = await res.json().catch(()=>null);
-          const raw = json?.data;
-          if (Array.isArray(raw)) {
-            list = raw.map((p: any) => ({
-              id: p.id ?? p.proposal_id ?? Math.random().toString(36).slice(2),
-              title: p.title || p.name || 'Untitled proposal',
-              status: (p.status || p.state || 'active').toLowerCase(),
-              created_ts: p.created_ts || p.createdAt || undefined,
-              for_votes: p.for_votes ?? p.forVotes ?? '0',
-              against_votes: p.against_votes ?? p.againstVotes ?? '0',
-              abstain_votes: p.abstain_votes ?? p.abstainVotes ?? '0',
-              allocation: Array.isArray(p.allocation) ? p.allocation : (Array.isArray(p.target_allocation) ? p.target_allocation : []),
-            }));
-          }
-        }
-        try {
-          const cfg = await fetch(`${GOV_API_BASE}/v1/gov/config`).then(r=> r.ok ? r.json(): null).catch(()=>null);
-          const q = cfg?.data?.quorumVotes ?? cfg?.quorumVotes;
-          if (q != null) setQuorum(formatBig(q));
-        } catch {}
-        if (!cancelled) setProposals(list);
-      } catch (e: any) {
-        if (!cancelled) setError(e.message || 'Failed to load proposals');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+        const cfg = await fetch(`${GOV_API_BASE}/v1/gov/config`).then(r=> r.ok ? r.json(): null).catch(()=>null);
+        const q = cfg?.data?.quorumVotes ?? cfg?.quorumVotes;
+        if (q != null) setQuorum(formatBig(q));
+      } catch {}
     })();
-    return () => { cancelled = true; };
   }, []);
+
+  const header = useMemo(() => {
+    const boostPct = boostMe.data?.data?.active ? (boostMe.data?.data?.boostPct || 0) : 0;
+    return (
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+        <ToggleButtonGroup size="small" exclusive value={status} onChange={(_,v)=> v && setStatus(v)}>
+          <ToggleButton value="All">All</ToggleButton>
+          <ToggleButton value="Open">Open</ToggleButton>
+          <ToggleButton value="Closed">Closed</ToggleButton>
+        </ToggleButtonGroup>
+        {boostPct > 0 && (
+          <Chip size="small" color="secondary" label={`Boost +${Math.round(boostPct*100)}%`} />
+        )}
+      </Stack>
+    );
+  }, [status, boostMe.data?.data?.active, boostMe.data?.data?.boostPct]);
 
   const content = useMemo(() => {
     if (loading) {
@@ -147,53 +95,33 @@ export default function GovernanceClient() {
         </Stack>
       );
     }
-    if (error) return <Alert severity="error" variant="outlined">{error}</Alert>;
-    if (!proposals.length) return <Alert severity="info" variant="outlined">No proposals yet. Be the first to create one.</Alert>;
-    const boostPct = boostMe.data?.data?.active ? (boostMe.data?.data?.boostPct || 0) : 0;
+    if (error) return <Alert severity="error" variant="outlined">{String(error?.message||error)}</Alert>;
+    if (!items.length) return <Alert severity="info" variant="outlined">No proposals yet. Be the first to create one.</Alert>;
     return (
-      <Stack spacing={2}>
-        {proposals.map(p => {
-          // Show on-chain/community tallies as-is; boost applies to YOUR vote weight only.
-          const forV = formatBig(p.for_votes);
-          const againstV = formatBig(p.against_votes);
-          const abstainV = formatBig(p.abstain_votes);
-          return (
-            <Card key={p.id} variant="outlined" aria-labelledby={`proposal-${p.id}-title`} sx={{ position: 'relative' }}>
-              <CardHeader
-                titleTypographyProps={{ variant: 'subtitle1', fontWeight: 600 }}
-                title={<span id={`proposal-${p.id}-title`}>{p.title}</span>}
-                action={<Stack direction="row" spacing={1} alignItems="center">
-                  {boostPct > 0 && (
-                    <Chip size="small" color="secondary" label={`Boost +${Math.round(boostPct*100)}%`} aria-label={`Your voting power is boosted by ${Math.round(boostPct*100)} percent`} />
-                  )}
-                  <Chip size="small" label={p.status} color={statusChipColor(p.status) as any} sx={{ textTransform: 'capitalize' }} aria-label={`Status ${p.status}`} />
-                </Stack>}
-              />
-              <CardContent sx={{ pt: 0 }}>
-                <Stack spacing={1.2}>
-                  <Box>
-                    <AllocationBar allocation={p.allocation} />
-                  </Box>
-                  <Stack direction="row" spacing={2} flexWrap="wrap" fontSize={12} aria-label="Vote tallies">
-                    <Box><Typography component="span" variant="caption" color="success.main">For </Typography><strong>{forV}</strong></Box>
-                    <Box><Typography component="span" variant="caption" color="error.main">Against </Typography><strong>{againstV}</strong></Box>
-                    <Box><Typography component="span" variant="caption" color="text.secondary">Abstain </Typography><strong>{abstainV}</strong></Box>
-                    {quorum && <Box><Typography component="span" variant="caption" color="text.secondary">Quorum </Typography><strong>{quorum}</strong></Box>}
-                  </Stack>
-                  <Divider flexItem light sx={{ my: 0.5 }} />
-                  <Box display="flex" justifyContent="flex-end">
-                    <Button size="small" endIcon={<LaunchIcon fontSize="inherit" />} component={Link} href={`/governance/${p.id}`} aria-label={`Open proposal ${p.title}`}>
-                      Open
-                    </Button>
-                  </Box>
-                </Stack>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </Stack>
+      <>
+        <Box display="grid" gridTemplateColumns={{ xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }} gap={2}>
+          {items.map((p: any) => (
+            <ProposalCard
+              key={p.id}
+              title={p.title}
+              summary={p.summary||''}
+              status={p.status}
+              startTimeISO={p.startTimeISO||p.start_ts||new Date().toISOString()}
+              endTimeISO={p.endTimeISO||p.end_ts||new Date().toISOString()}
+              yes={Number(p.yes ?? p.for_votes ?? 0)}
+              no={Number(p.no ?? p.against_votes ?? 0)}
+              abstain={Number(p.abstain ?? p.abstain_votes ?? 0)}
+            />
+          ))}
+        </Box>
+        <Box display="flex" justifyContent="center" sx={{ mt: 2 }}>
+          <Button variant="outlined" disabled={!proposalsQuery.hasNextPage || proposalsQuery.isFetchingNextPage} onClick={()=> proposalsQuery.fetchNextPage()}>
+            {proposalsQuery.isFetchingNextPage ? 'Loading…' : (proposalsQuery.hasNextPage ? 'Load more' : 'No more')}
+          </Button>
+        </Box>
+      </>
     );
-  }, [loading, error, proposals, quorum]);
+  }, [loading, error, items, proposalsQuery.hasNextPage, proposalsQuery.isFetchingNextPage]);
 
   const boostCard = (
     <Card variant="outlined">
@@ -235,23 +163,15 @@ export default function GovernanceClient() {
         <Typography variant="body2" sx={{ opacity: 0.65, mb: 3, maxWidth: 720 }}>
           Propose, review and vote on allocation or protocol parameter changes.
         </Typography>
-        {content}
+  {header}
+  {content}
       </Box>
       <Box width={{ xs: '100%', lg: 320 }} flexShrink={0} display="flex" flexDirection="column" gap={3}>
         {boostCard}
         <Card variant="outlined">
           <CardContent>
             <Stack spacing={2}>
-              <Button
-                fullWidth
-                startIcon={<AddCircleOutlineIcon />}
-                variant="contained"
-                component={Link}
-                href="/create"
-                aria-label="Create new allocation proposal"
-              >
-                Create Proposal
-              </Button>
+              <Button fullWidth startIcon={<AddCircleOutlineIcon />} variant="contained" component={Link} href="/create" aria-label="Create new allocation proposal">Create Proposal</Button>
               <Alert severity="info" variant="outlined" sx={{ fontSize: 13 }} aria-live="polite">
                 {quorum ? (
                   <>Quorum: <strong>{quorum}</strong> for-votes required to finalize. Allocation bar shows target weights per venue.</>

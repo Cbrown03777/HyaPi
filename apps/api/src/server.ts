@@ -27,6 +27,7 @@ import { venuesRouter } from './web/venues';
 import { walletRouter } from './web/wallet';
 import { manualActionsRouter } from './web/manualActions';
 import { govBoostRouter, govBoostPublicRouter } from './web/govBoost';
+import { govProposalsPublicRouter } from './web/govProposals';
 
 import { auth } from './web/middleware/auth';
 import { idempotency } from './web/middleware/idempotency';
@@ -101,6 +102,8 @@ app.use('/v1/venues', venuesRouter);
 app.use('/v1/alloc', allocGovPublicRouter);
 // Public governance config (boost terms)
 app.use('/v1/gov', govBoostPublicRouter);
+// Public governance proposals list
+app.use('/v1/gov', govProposalsPublicRouter);
 // NOTE: /v1/venues mounted earlier (public). Everything after this requires auth.
 app.use(auth);
 app.use(idempotency);

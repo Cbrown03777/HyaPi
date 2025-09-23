@@ -12,6 +12,7 @@ import ThemeRegistry from '@/theme/ThemeRegistry';
 import dynamic from 'next/dynamic';
 const MUIVersionAndApiHealthGate = dynamic(() => import('@/components/MUIVersionAndApiHealthGate').then(m=>m.MUIVersionAndApiHealthGate), { ssr: false });
 import { AppBar, Box, Container, Link as MuiLink, Toolbar, Typography } from '@mui/material';
+import { QueryProvider } from '@/components/QueryProvider';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' })
 
@@ -46,25 +47,27 @@ export default function RootLayout({
                 </Container>
               </Toolbar>
             </AppBar>
-            <ToastProvider>
-              <ActivityProvider>
-                <Box component="main" sx={{ py: { xs: 4, sm: 6 } }}>
-                  <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {children}
-                  </Container>
-                </Box>
-                <BottomNav />
-                <Box component="footer" sx={{ mt: 10, borderTop: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.3)' }}>
-                  <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 }, py: 4, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: { xs: 2, sm: 4 }, color: 'text.secondary', fontSize: 14 }}>
-                    <Typography sx={{ flex: 1 }}>© {new Date().getFullYear()} HyaPi</Typography>
-                    <Box component="nav" sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <MuiLink href="/privacy" underline="hover" color="inherit" sx={{ fontSize: 14 }}>Privacy</MuiLink>
-                      <MuiLink href="/terms" underline="hover" color="inherit" sx={{ fontSize: 14 }}>Terms</MuiLink>
-                    </Box>
-                  </Container>
-                </Box>
-              </ActivityProvider>
-            </ToastProvider>
+            <QueryProvider>
+              <ToastProvider>
+                <ActivityProvider>
+                  <Box component="main" sx={{ py: { xs: 4, sm: 6 } }}>
+                    <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {children}
+                    </Container>
+                  </Box>
+                  <BottomNav />
+                  <Box component="footer" sx={{ mt: 10, borderTop: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.3)' }}>
+                    <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3 }, py: 4, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: { xs: 2, sm: 4 }, color: 'text.secondary', fontSize: 14 }}>
+                      <Typography sx={{ flex: 1 }}>© {new Date().getFullYear()} HyaPi</Typography>
+                      <Box component="nav" sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <MuiLink href="/privacy" underline="hover" color="inherit" sx={{ fontSize: 14 }}>Privacy</MuiLink>
+                        <MuiLink href="/terms" underline="hover" color="inherit" sx={{ fontSize: 14 }}>Terms</MuiLink>
+                      </Box>
+                    </Container>
+                  </Box>
+                </ActivityProvider>
+              </ToastProvider>
+            </QueryProvider>
           </I18nProvider>
         </ThemeRegistry>
       </body>
