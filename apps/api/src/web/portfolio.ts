@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../services/db';
 import { getPrices, type SupportedSymbol } from '@hyapi/prices';
+import { getPortfolioMetrics } from '../services/metrics';
 
-export const portfolioRouter = Router(); // <-- NAMED export
+export const portfolioRouter = Router(); // <-- NAMED export (auth-required)
+export const portfolioPublicRouter = Router(); // <-- NAMED export (no auth)
 
 portfolioRouter.get('/', async (req: Request, res: Response) => {
   try {
@@ -48,5 +50,19 @@ portfolioRouter.get('/', async (req: Request, res: Response) => {
   } catch (e:any) {
     console.error('portfolio error', e);
     res.status(500).json({ success:false, error:{ code:'SERVER', message:e.message }});
+  }
+});
+
+// Public metrics endpoint; do not 500.
+portfolioPublicRouter.get('/metrics', async (_req: Request, res: Response) => {
+  try {
+    const { ok, data, status } = await getPortfolioMetrics();
+    if (!ok || !data) {
+      return res.status(status ?? 503).json({ success: false, error: { code: 'METRICS_UNAVAILABLE' } });
+    }
+    return res.json({ success: true, data });
+  } catch (e:any) {
+    console.error('metrics error', e?.message);
+    return res.status(503).json({ success:false, error:{ code:'METRICS_UNAVAILABLE' }});
   }
 });

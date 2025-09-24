@@ -25,6 +25,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import { useTheme } from '@mui/material/styles';
 import Link from 'next/link';
+import { usePortfolioMetrics } from '@/hooks/usePortfolioMetrics';
 
 type Portfolio = {
   hyapi_amount: string;
@@ -61,6 +62,7 @@ function useBearer() {
 export default function HomePage() {
   const token = useBearer();
   const theme = useTheme();
+  const { data: metrics, isLoading: metricsLoading } = usePortfolioMetrics();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [summary, setSummary] = useState<AllocSummary | null>(null);
   const [ema7, setEma7] = useState<number | null>(null);
@@ -94,9 +96,10 @@ export default function HomePage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const tvlPi = portfolio ? Number(portfolio.effective_pi_value) : null;
-  const tvlUsd = summary?.totalUsd ?? null;
-  const netApy = ema7 ?? summary?.totalNetApy ?? null;
+  // Use total TVL Pi from metrics (deployed + buffer); fallback to effective Pi if metrics absent
+  const tvlPi = metrics ? metrics.tvlPI : (portfolio ? Number(portfolio.effective_pi_value) : null);
+  const tvlUsd = metrics ? metrics.tvlUSD : (summary?.totalUsd ?? null);
+  const netApy = metrics ? metrics.apy7d : (ema7 ?? summary?.totalNetApy ?? null);
   const avgNetApyDisplay = netApy != null ? fmtPercent(netApy * 100, 2) : '—';
   const tvlPiDisplay = tvlPi != null ? (tvlPi >= 10000 ? fmtCompact(tvlPi) : fmtDec(tvlPi)) + ' Pi' : '—';
   const tvlUsdDisplay = tvlUsd != null ? '$' + (tvlUsd >= 10000 ? fmtCompact(tvlUsd) : fmtDec(tvlUsd)) : '—';
@@ -148,9 +151,9 @@ export default function HomePage() {
   </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Stack spacing={2} sx={{ height: '100%' }}>
-            <HeroKpiCard label="TVL (Pi)" value={loading ? <Skeleton width={120} /> : tvlPiDisplay} />
-            <HeroKpiCard label="TVL (USD)" value={loading ? <Skeleton width={120} /> : tvlUsdDisplay} />
-            <HeroKpiCard label="Avg Net APY" value={loading ? <Skeleton width={80} /> : avgNetApyDisplay} chip={netApy != null ? 'EMA7' : undefined} />
+            <HeroKpiCard label="TVL (Pi)" value={(loading || metricsLoading) ? <Skeleton width={120} /> : tvlPiDisplay} />
+            <HeroKpiCard label="TVL (USD)" value={(loading || metricsLoading) ? <Skeleton width={120} /> : tvlUsdDisplay} chip={metrics?.prices.degraded ? 'prices degraded' : undefined} />
+            <HeroKpiCard label="Avg Net APY" value={(loading || metricsLoading) ? <Skeleton width={80} /> : avgNetApyDisplay} chip={netApy != null ? 'EMA7' : undefined} />
             <HeroKpiCard label="30d Volume" value={loading ? <Skeleton width={100} /> : volume30dDisplay} />
           </Stack>
         </Box>

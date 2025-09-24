@@ -1,5 +1,6 @@
 import { Box, Typography, Paper } from '@mui/material';
 import AllocatorRow from '@/components/admin/AllocatorRow';
+import { AdminMetricsPanel } from '@/components/admin/AdminMetrics';
 
 export default function AdminIndex() {
 	return (
@@ -8,6 +9,7 @@ export default function AdminIndex() {
 				<Typography variant="h5" fontWeight={600}>Admin</Typography>
 				<Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Internal operational panels. Use navigation to access specific tools.</Typography>
 			</Box>
+	      <AdminMetricsPanel />
 	      <AllocatorRow />
 			<Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
 				<Paper

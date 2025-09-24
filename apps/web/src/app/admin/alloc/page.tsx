@@ -361,7 +361,7 @@ export default function AllocationPlanner() {
 						<Typography variant="caption" sx={{ opacity:0.7, display:'flex', alignItems:'center', gap:0.5 }}>Allocation vs Target <InfoOutlinedIcon fontSize="inherit" /></Typography>
 						<Box sx={{ mt:0.5, borderRadius:1, overflow:'hidden', border:'1px solid', borderColor:'divider', position:'relative', height:24, display:'flex' }}>
 							{current.venues.map((v:any, idx:number)=> {
-								const actualPct = current.totalUsd>0 ? v.usd/current.totalUsd : 0;
+								const actualPct = current.deployedUsd>0 ? v.usd/current.deployedUsd : 0;
 								return <Box key={v.key}
 									sx={{ flex: actualPct, bgcolor: colorFor(v.key, idx), opacity:0.4, position:'relative' }} />;
 							})}

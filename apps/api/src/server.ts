@@ -16,7 +16,7 @@ import { votesRouter } from './web/votes';
 import { finalizeRouter } from './web/finalize';
 import { executeRouter } from './web/execute';
 import { stakingRouter, simulateDailyYieldIfNeeded } from './web/staking';
-import { portfolioRouter } from './web/portfolio';
+import { portfolioRouter, portfolioPublicRouter } from './web/portfolio';
 import { activityRouter } from './web/activity';
 import { piRouter } from './web/pi';
 import { metadataRouter } from './web/metadata';
@@ -104,6 +104,8 @@ app.use('/v1/alloc', allocGovPublicRouter);
 app.use('/v1/gov', govBoostPublicRouter);
 // Public governance proposals list
 app.use('/v1/gov', govProposalsPublicRouter);
+// Public portfolio metrics
+app.use('/v1/portfolio', portfolioPublicRouter);
 // NOTE: /v1/venues mounted earlier (public). Everything after this requires auth.
 app.use(auth);
 app.use(idempotency);
