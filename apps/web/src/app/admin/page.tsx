@@ -1,13 +1,19 @@
-import { Box, Typography, Paper } from '@mui/material';
+import { Box, Typography, Paper, Button } from '@mui/material';
+import { useState } from 'react';
+import { ProofDialog } from '@/components/proof/ProofDialog';
 import AllocatorRow from '@/components/admin/AllocatorRow';
 import { AdminMetricsPanel } from '@/components/admin/AdminMetrics';
 
 export default function AdminIndex() {
+	const [showProof, setShowProof] = useState(false);
 	return (
 		<Box sx={{ maxWidth: 860, mx: 'auto', py: 4, px: { xs: 2, sm: 3 }, display: 'flex', flexDirection: 'column', gap: 4 }}>
-			<Box component="header">
-				<Typography variant="h5" fontWeight={600}>Admin</Typography>
-				<Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Internal operational panels. Use navigation to access specific tools.</Typography>
+			<Box component="header" sx={{ display:'flex', alignItems:'center', gap:2 }}>
+				<Box sx={{ flex:1 }}>
+					<Typography variant="h5" fontWeight={600}>Admin</Typography>
+					<Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>Internal operational panels. Use navigation to access specific tools.</Typography>
+				</Box>
+				<Button size="small" variant="outlined" onClick={()=>setShowProof(true)}>View on‑chain addresses</Button>
 			</Box>
 	      <AdminMetricsPanel />
 	      <AllocatorRow />
@@ -32,6 +38,7 @@ export default function AdminIndex() {
 						<Typography variant="caption" color="text.secondary">Preview and simulate rebalances across venues.</Typography>
 				</Paper>
 			</Box>
+		<ProofDialog open={showProof} onClose={()=>setShowProof(false)} />
 		</Box>
 	);
 }

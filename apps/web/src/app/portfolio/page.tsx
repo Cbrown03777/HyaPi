@@ -4,9 +4,14 @@ import { GOV_API_BASE } from '@hyapi/shared'
 import { signInWithPi } from '@/lib/pi'
 import { StatCard } from '@/components/StatCard'
 import { Card } from '@/components/Card'
-import { Box, Typography, Table, TableHead, TableRow, TableCell, TableBody, Chip } from '@mui/material'
+import { Box, Typography, Table, TableHead, TableRow, TableCell, TableBody, Chip, Skeleton, Alert, Button } from '@mui/material'
 import { useActivity } from '@/components/ActivityProvider'
 import { fmtNumber, fmtPercent, fmtCompact } from '@/lib/format'
+import { useAllocation } from '@/hooks/useAllocation'
+import { AllocationBar } from '@/components/portfolio/AllocationBar'
+import { ApyCards } from '@/components/portfolio/ApyCards'
+import { PublicAddresses } from '@/components/portfolio/PublicAddresses'
+import { ProofDialog } from '@/components/proof/ProofDialog'
 
 type PpsRow = { as_of_date: string; pps_1e18: string }
 
@@ -17,6 +22,7 @@ export default function PortfolioPage() {
   const [pps1e18, setPps1e18] = useState<string | null>(null)
   const [series, setSeries] = useState<PpsRow[]>([])
   const { items } = useActivity()
+  const [showProof, setShowProof] = useState(false)
 
   useEffect(() => {
     (async () => {
@@ -54,9 +60,16 @@ export default function PortfolioPage() {
     return ((last / prev) - 1) * 100
   }, [series])
 
+  // Allocation / APY query
+  const allocQ = useAllocation()
+  const alloc = allocQ.data
+
   return (
     <Box sx={{ mx: 'auto', maxWidth: 'lg', px: { xs: 2, sm: 3 }, py: 4 }}>
-      <Typography variant="h5" fontWeight={600} gutterBottom>Your Portfolio</Typography>
+      <Box sx={{ display:'flex', alignItems:'center', mb:1 }}>
+        <Typography variant="h5" fontWeight={600} sx={{ flex:1 }}>Your Portfolio</Typography>
+        <Button size="small" variant="outlined" onClick={()=>setShowProof(true)}>View on‑chain addresses</Button>
+      </Box>
 
       <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, mt: 0.5 }}>
         <StatCard label="hyaPi balance" value={`${(hyapi ?? 0) >= 10000 ? fmtCompact(hyapi ?? 0) : fmtNumber(hyapi)} hyaPi`} tone="primary" />
@@ -71,13 +84,27 @@ export default function PortfolioPage() {
         />
       </Box>
 
+      <Box sx={{ mt: 2 }}>
+        {allocQ.isLoading && <Skeleton variant="rounded" height={60} />}
+        {!allocQ.isLoading && alloc && <ApyCards pps={alloc.pps} apy7d={alloc.apy7d} lifetimeGrowth={alloc.lifetimeGrowth} />}
+      </Box>
+      {alloc?.degraded && (
+        <Alert severity="warning" sx={{ mt: 1 }}>
+          Allocation / APY data is degraded or incomplete.
+        </Alert>
+      )}
+
       <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, mt: 1 }}>
         <Card>
           <Box sx={{ px: 2.5, py: 1.25, background: 'linear-gradient(90deg, rgba(255,255,255,0.08), transparent)' }}>
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>Allocation</Typography>
           </Box>
-          <Box sx={{ p: 2.5, pt: 1.5, typography: 'body2', color: 'rgba(255,255,255,0.8)' }}>
-            Allocation data isn’t available yet. Governance proposals will define target weights across chains.
+          <Box sx={{ p: 2.5, pt: 1.5 }}>
+            {allocQ.isLoading && <Skeleton variant="rounded" height={18} />}
+            {!allocQ.isLoading && <AllocationBar mix={alloc?.chainMix || []} />}
+            <Box sx={{ mt: 2 }}>
+              <PublicAddresses />
+            </Box>
           </Box>
         </Card>
         <Card>
@@ -118,6 +145,7 @@ export default function PortfolioPage() {
           </Box>
         </Card>
       </Box>
+      <ProofDialog open={showProof} onClose={()=>setShowProof(false)} />
     </Box>
   )
 }

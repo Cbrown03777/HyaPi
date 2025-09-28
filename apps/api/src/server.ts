@@ -28,6 +28,7 @@ import { walletRouter } from './web/wallet';
 import { manualActionsRouter } from './web/manualActions';
 import { govBoostRouter, govBoostPublicRouter } from './web/govBoost';
 import { govProposalsPublicRouter } from './web/govProposals';
+import { proofRouter } from './web/proof';
 
 import { auth } from './web/middleware/auth';
 import { idempotency } from './web/middleware/idempotency';
@@ -106,6 +107,8 @@ app.use('/v1/gov', govBoostPublicRouter);
 app.use('/v1/gov', govProposalsPublicRouter);
 // Public portfolio metrics
 app.use('/v1/portfolio', portfolioPublicRouter);
+// Public proof of reserves
+app.use('/v1/proof', proofRouter);
 // NOTE: /v1/venues mounted earlier (public). Everything after this requires auth.
 app.use(auth);
 app.use(idempotency);

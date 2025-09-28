@@ -2,6 +2,10 @@ import { Router, Request, Response } from 'express';
 import { db } from '../services/db';
 import { getPrices, type SupportedSymbol } from '@hyapi/prices';
 import { getPortfolioMetrics } from '../services/metrics';
+import { getNavSeries } from '../services/navHistory';
+import { calcApy } from '../services/apy';
+import { getChainMix } from '../services/allocation';
+import type { AllocationMetrics } from '../types/nav';
 
 export const portfolioRouter = Router(); // <-- NAMED export (auth-required)
 export const portfolioPublicRouter = Router(); // <-- NAMED export (no auth)
@@ -64,5 +68,35 @@ portfolioPublicRouter.get('/metrics', async (_req: Request, res: Response) => {
   } catch (e:any) {
     console.error('metrics error', e?.message);
     return res.status(503).json({ success:false, error:{ code:'METRICS_UNAVAILABLE' }});
+  }
+});
+
+// Public allocation + APY endpoint (non-fatal; never 500) GET /v1/portfolio/allocation
+portfolioPublicRouter.get('/allocation', async (_req: Request, res: Response) => {
+  const degraded = { success: true, data: { pps: 1, apy7d: 0, lifetimeGrowth: 0, chainMix: [], ppsSeries: [], degraded: true } };
+  try {
+    const series = await getNavSeries(30);
+    if (!series.length) {
+      return res.json(degraded);
+    }
+    let apy7d = 0, lifetimeGrowth = 0;
+    try {
+      const apyStats = calcApy(series);
+      apy7d = apyStats.apy7d;
+      lifetimeGrowth = apyStats.lifetimeGrowth;
+    } catch {}
+    const chainMix = await getChainMix().catch(()=>[]);
+    const data: AllocationMetrics & { degraded: boolean } = {
+      pps: series[series.length-1].pps ?? 1,
+      apy7d: Number.isFinite(apy7d) ? apy7d : 0,
+      lifetimeGrowth: Number.isFinite(lifetimeGrowth) ? lifetimeGrowth : 0,
+      chainMix: chainMix || [],
+      ppsSeries: series,
+      degraded: !chainMix?.length
+    };
+    return res.json({ success: true, data });
+  } catch (e:any) {
+    console.warn('allocation endpoint degraded', e?.message);
+    return res.json(degraded);
   }
 });

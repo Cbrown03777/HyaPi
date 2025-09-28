@@ -9,7 +9,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "echo \"Error: no test specified\" && exit 1",
     "buffer:demo": "node src/scripts/buffer_flow_demo.cjs",
-    "buffer:check": "node src/scripts/buffer_flow_check.cjs"
+    "buffer:check": "node src/scripts/buffer_flow_check.cjs",
+    "db:migrate:nav": "psql $DATABASE_URL -f ../../infra/db/0022_nav_history.sql",
+    "db:inspect": "tsx scripts/inspect-schema.ts",
+    "db:backfill:nav": "tsx scripts/backfill-nav-history.ts",
+    "smoke:proof": "tsx scripts/smoke-proof.ts"
   },
   "keywords": [],
   "author": "",
