@@ -1,3 +1,4 @@
+"use client";
 import { Box, Typography, Paper, Button } from '@mui/material';
 import { useState } from 'react';
 import { ProofDialog } from '@/components/proof/ProofDialog';

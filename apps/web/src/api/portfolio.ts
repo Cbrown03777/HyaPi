@@ -1,7 +1,7 @@
 import { API_BASE } from './config';
 
-export type ChainMix = Array<{ chain: string; weight: number; usd: number }>;
-export type AssetMix = Array<{ market: string; chain: string; weight: number; usd: number }>;
+export type ChainMix = Array<{ chain: string; weight: number; usd: number; address?: string }>;
+export type AssetMix = Array<{ market: string; chain: string; weight: number; usd: number; address?: string }>;
 
 export interface PortfolioMetrics {
   tvlUSD: number;

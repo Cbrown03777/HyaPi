@@ -36,7 +36,13 @@ export function ProofOfReservesPanel() {
           )}
           {items.map((r: any) => (
             <TableRow key={r.chain + r.address}>
-              <TableCell sx={{ fontSize: 13 }}>{r.chain}</TableCell>
+              <TableCell sx={{ fontSize: 13, display:'flex', alignItems:'center', gap:0.75 }}>
+                {(r.chain === 'COSMOS' || r.asset === 'PI') && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src="/assets/hyapi-logo.svg" width={16} height={16} alt="HyaPi Coin" style={{ verticalAlign:'middle' }} onError={(e)=>{ (e.currentTarget as HTMLImageElement).src='/assets/hyapi-logo.png'; }} />
+                )}
+                {r.chain}
+              </TableCell>
               <TableCell sx={{ fontSize: 13 }}>{r.asset}</TableCell>
               <TableCell sx={{ fontSize: 13, fontFamily: 'monospace' }}>
                 <Tooltip title={r.address} placement="top" arrow>

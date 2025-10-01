@@ -1,5 +1,5 @@
-export type ChainMix = { chain: string; weight: number };
-export type AssetMix = { asset: string; weight: number; venue?: string };
+export type ChainMix = { chain: string; weight: number; address?: string };
+export type AssetMix = { asset: string; weight: number; venue?: string; address?: string };
 
 export interface Metrics {
   tvlUSD: number;            // total = deployed + buffer (PI * price)

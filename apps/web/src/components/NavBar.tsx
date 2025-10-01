@@ -104,9 +104,17 @@ export function NavBar() {
               <MenuIcon />
             </IconButton>
           </Box>
-          <Box component={Link} href="/" sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', mr: 1 }}> 
-            <Box sx={{ width: 28, height: 28, bgcolor: 'primary.main', borderRadius: 1.5, mr: 1 }} aria-hidden />
-            <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: '-0.5px' }}>HyaPi</Typography>
+          <Box component={Link} href="/" sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', color: 'inherit', mr: 1, gap: 1 }}> 
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/assets/hyapi-logo.svg"
+              alt="HyaPi Logo"
+              width={32}
+              height={32}
+              style={{ display: 'inline-block', objectFit:'contain' }}
+              onError={(e)=>{ (e.currentTarget as HTMLImageElement).src='/assets/hyapi-logo.png'; }}
+            />
+            <Typography variant="h6" sx={{ fontWeight: 600, letterSpacing: '-0.5px', display:{ xs:'none', sm:'block' } }}>hyaPi</Typography>
           </Box>
 
           {/* Center nav (desktop) */}
@@ -212,8 +220,9 @@ export function NavBar() {
         PaperProps={{ sx: { width: 260, backgroundColor: '#121214', color: 'text.primary' } }}
       >
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Box sx={{ width: 28, height: 28, bgcolor: 'primary.main', borderRadius: 1.5 }} aria-hidden />
-          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>HyaPi</Typography>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/assets/hyapi-logo.svg" alt="HyaPi Logo" width={28} height={28} style={{ objectFit:'contain' }} onError={(e)=>{ (e.currentTarget as HTMLImageElement).src='/assets/hyapi-logo.png'; }} />
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>hyaPi</Typography>
         </Box>
         <Divider sx={{ borderColor: 'rgba(255,255,255,0.08)' }} />
         <List component="nav" aria-label="Mobile navigation" sx={{ py: 1 }}>

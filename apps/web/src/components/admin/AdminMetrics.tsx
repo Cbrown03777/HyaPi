@@ -1,6 +1,8 @@
 "use client";
 import React from 'react';
-import { Card, CardContent, Typography, Stack, Chip, Box, LinearProgress, linearProgressClasses, Skeleton } from '@mui/material';
+import { Card, CardContent, Typography, Stack, Chip, Box, LinearProgress, linearProgressClasses, Skeleton, IconButton, Tooltip } from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { addressForChain } from '@/config/addresses';
 import { usePortfolioMetrics } from '@/hooks/usePortfolioMetrics';
 import { fmtNumber as fmtDec, fmtCompact, fmtPercent } from '@/lib/format';
 
@@ -23,7 +25,7 @@ function StackedBar({
   segments,
 }: {
   title: string;
-  segments: Array<{ label: string; color?: string; weight: number; tooltip?: string }>
+  segments: Array<{ label: string; color?: string; weight: number; tooltip?: string; address?: string }>
 }) {
   const total = segments.reduce((s, x) => s + x.weight, 0) || 1;
   return (
@@ -38,9 +40,20 @@ function StackedBar({
           ))}
         </Box>
         <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
-          {segments.map((s, i) => (
-            <Chip key={i} size="small" variant="outlined" label={`${s.label} · ${fmtPercent(s.weight*100,1)}`} />
-          ))}
+          {segments.map((s, i) => {
+            const addr = s.address || addressForChain(s.label.toUpperCase() as any) || null;
+            return (
+              <Box key={i} sx={{ display:'flex', flexDirection:'column', border:'1px solid', borderColor:'divider', borderRadius:1, p:0.5, minWidth:150 }}>
+                <Chip size="small" variant="outlined" label={`${s.label} · ${fmtPercent(s.weight*100,1)}`} sx={{ mb:0.5 }} />
+                <Typography variant="caption" sx={{ fontFamily:'monospace', fontSize:11, display:'flex', alignItems:'center', gap:0.5 }}>
+                  {addr || '—'}
+                  {addr && (
+                    <Tooltip title="Copy"><span><IconButton size="small" onClick={()=> navigator?.clipboard?.writeText(addr).catch(()=>{})} sx={{ p:0.25 }}><ContentCopyIcon fontSize="inherit" /></IconButton></span></Tooltip>
+                  )}
+                </Typography>
+              </Box>
+            );
+          })}
         </Stack>
       </CardContent>
     </Card>
@@ -67,11 +80,11 @@ export function AdminMetricsPanel() {
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
         <StackedBar
           title="By Chain"
-          segments={(data?.chainMix ?? []).map(m=>({ label: m.chain, weight: m.weight, tooltip: `${m.chain} · $${fmtDec(m.usd)}` }))}
+          segments={(data?.chainMix ?? []).map(m=>({ label: m.chain, weight: m.weight, tooltip: `${m.chain} · $${fmtDec(m.usd)}`, address: (m as any).address }))}
         />
         <StackedBar
           title="By Asset/Market"
-          segments={(data?.assetMix ?? []).map(m=>({ label: `${m.market}`, weight: m.weight, tooltip: `${m.market} on ${m.chain} · $${fmtDec(m.usd)}` }))}
+          segments={(data?.assetMix ?? []).map(m=>({ label: `${m.market}`, weight: m.weight, tooltip: `${m.market} on ${m.chain} · $${fmtDec(m.usd)}`, address: (m as any).address }))}
         />
       </Stack>
     </Stack>

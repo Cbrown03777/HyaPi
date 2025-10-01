@@ -31,6 +31,13 @@ export default function RootLayout({
     <html lang="en" className="h-full" data-theme="dark">
       <head>
   <Script src="https://sdk.minepi.com/pi-sdk.js" strategy="beforeInteractive" />
+  <meta property="og:image" content="/assets/hyapi-logo.png" />
+  <meta name="twitter:image" content="/assets/hyapi-logo.png" />
+  <link rel="preload" as="image" href="/assets/hyapi-logo.svg" type="image/svg+xml" />
+        <meta property="og:title" content="HyaPi — Stake, Govern, Grow" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
       </head>
   <body className={`${inter.className}`}>
         <ThemeRegistry>

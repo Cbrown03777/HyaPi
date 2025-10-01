@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="320" height="320" viewBox="0 0 320 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">HyaPi Liquid Staking Coin</title>
+  <desc id="desc">A circular purple coin logo with a shield and liquid droplet motif conveying trust and liquidity, with an upward chevron for momentum. No text or Pi symbol.</desc>
+
+  <defs>
+    <!-- Brand gradient (purple) -->
+    <radialGradient id="gCoin" cx="50%" cy="38%" r="72%">
+      <stop offset="0%" stop-color="#D07AC0"/>
+      <stop offset="55%" stop-color="#B6509E"/>
+      <stop offset="100%" stop-color="#8E3C7C"/>
+    </radialGradient>
+
+    <!-- Rim highlight -->
+    <linearGradient id="gRim" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#E7CFE1" stop-opacity="0.25"/>
+    </linearGradient>
+
+    <!-- Inner glow for depth -->
+    <radialGradient id="gInner" cx="50%" cy="45%" r="60%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Liquid sheen -->
+    <linearGradient id="gSheen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.00"/>
+    </linearGradient>
+
+    <!-- Safe shadow for standalone placement -->
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Coin base with soft shadow -->
+  <g filter="url(#softShadow)">
+    <!-- Core disc -->
+    <circle cx="160" cy="160" r="132" fill="url(#gCoin)"/>
+    <!-- Rim -->
+    <circle cx="160" cy="160" r="132" fill="none" stroke="url(#gRim)" stroke-width="6"/>
+    <!-- Inner glow -->
+    <circle cx="160" cy="160" r="110" fill="url(#gInner)"/>
+  </g>
+
+  <!-- Upper wave sheen (liquidity) -->
+  <path d="M60,120 C105,92 135,92 160,105 C185,118 215,118 260,90 L260,110 C215,138 185,138 160,125 C135,112 105,112 60,140 Z" fill="url(#gSheen)" opacity="0.35"/>
+
+  <!-- Shield + droplet + upward chevron mark -->
+  <!-- Shield outline -->
+  <path d="M160 206 C135 196 116 177 108 152 C104 139 102 125 102 109 L160 92 L218 109 C218 137 211 160 197 178 C187 192 174 201 160 206 Z"
+        fill="#FFFFFF" fill-opacity="0.90"/>
+
+  <!-- Inner droplet (liquidity core) -->
+  <path d="M160 122 C171 138 182 154 182 168 C182 182 172 194 160 194 C148 194 138 182 138 168 C138 154 149 138 160 122 Z"
+        fill="url(#gCoin)"/>
+
+  <!-- Upward chevron (momentum/growth) -->
+  <path d="M140 156 L160 140 L180 156"
+        fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Lower wave accent -->
+  <path d="M60,205 C95,190 120,191 160,202 C200,213 225,212 260,197 L260,210 C225,225 200,226 160,215 C120,204 95,205 60,220 Z" fill="#FFFFFF" opacity="0.08"/>
+</svg>

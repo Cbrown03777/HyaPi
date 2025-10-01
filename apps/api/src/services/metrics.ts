@@ -81,6 +81,17 @@ async function getVenueBalances(): Promise<VenueRow[]> {
   } catch { return []; }
 }
 
+// Static address mapping (mirrors web config). In future unify via shared package if needed.
+const ADDRESS_MAP: Record<string,string> = {
+  COSMOS: 'cosmos1xhdm4xccpqsvcxel5amf4r32e86q9k48x7aqjx',
+  ARBITRUM: '0x1660Ef3e78FA3f04289B773b6ccF3666DBB6c7B5',
+  BASE: '0x1660Ef3e78FA3f04289B773b6ccF3666DBB6c7B5',
+  TIA: 'celestia1xhdm4xccpqsvcxel5amf4r32e86q9k48h5vsgt',
+  TERRA: 'terra15hf2ad99amu5x3edd99jnv049cwqrga6yf5hc2',
+  JUNO: 'juno1xhdm4xccpqsvcxel5amf4r32e86q9k48sv7m46',
+  BAND: 'band13df4yakp3d429e503gmqw7tdvfg3d9dd6uzjnr'
+};
+
 function buildChainMix(venues: VenueRow[], bufferPI: number): ChainMix[] {
   const deployed = venues.reduce((s, v) => s + (Number(v.deployed_pi ?? 0) || 0), 0);
   const denom = Math.max(1, deployed);
@@ -90,7 +101,7 @@ function buildChainMix(venues: VenueRow[], bufferPI: number): ChainMix[] {
     const amt = Number(v.deployed_pi ?? 0) || 0;
     byChain.set(chain, (byChain.get(chain) || 0) + amt);
   }
-  return Array.from(byChain.entries()).map(([chain, amt]) => ({ chain, weight: amt / denom }));
+  return Array.from(byChain.entries()).map(([chain, amt]) => ({ chain, weight: amt / denom, address: ADDRESS_MAP[chain.toUpperCase()] }));
 }
 
 function buildAssetMix(venues: VenueRow[], bufferPI: number): AssetMix[] {
