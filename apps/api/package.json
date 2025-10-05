@@ -33,6 +33,7 @@
   "dependencies": {
     "@hyapi/prices": "workspace:*",
     "@hyapi/venues": "workspace:*",
+    "@hyapi/alloc": "workspace:*",
     "axios": "^1.7.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
