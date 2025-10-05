@@ -41,6 +41,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@hyapi/alloc':
+        specifier: workspace:*
+        version: link:../../packages/alloc
       '@hyapi/prices':
         specifier: workspace:*
         version: link:../../packages/prices
