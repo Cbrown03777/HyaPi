@@ -5,8 +5,6 @@
  */
 import path from 'node:path';
 import dotenv from 'dotenv';
-// Load env from apps/api/.env explicitly so running from monorepo root still picks it up
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -154,18 +152,31 @@ app.use('/v1/admin/allocator', auth, adminAllocatorRouter);
 app.use('/v1/admin', auth, manualActionsRouter);
 // Public venues rates (no bearer required) – mount before auth
 // (Already mounted publicly above)
+// Only load local .env when NOT running in production (Render uses env panel)
+if ((process.env.NODE_ENV ?? 'production') !== 'production') {
+  dotenv.config({ path: path.resolve(__dirname, '../.env') });
+}
 
+console.log('[boot] NODE_ENV=%s MIGRATIONS_ENABLED=%s',
+  process.env.NODE_ENV, process.env.MIGRATIONS_ENABLED);
 
 const port = Number(process.env.PORT || 8080);
 app.listen(port, '0.0.0.0', async () => {
   console.log(`API on ${port}`);
-  try { await runMigrations(); } catch (e:any) { console.error('migration error (non-fatal)', e?.message); }
+
+  const MIG_ENABLED = (process.env.MIGRATIONS_ENABLED ?? 'false').toLowerCase() === 'true';
+  if (MIG_ENABLED) {
+    try { await runMigrations(); } catch (e:any) { console.error('migration error (non-fatal)', e?.message); }
+  } else {
+    console.warn('[migrate] skipped (MIGRATIONS_ENABLED=false)');
+  }
+
   try { await ensurePiIntegration(); } catch (e: any) { console.error('pi bootstrap error', e?.message); }
   try { await ensureBootstrap(); } catch (e:any) { console.error('alloc bootstrap error', e?.message); }
   try { await clearApyScalingFlags(); } catch (e:any) { console.error('clear apy flags error', e?.message); }
-  // Start background worker to track A2U payouts
   try { startPiPayoutWorker(); } catch (e: any) { console.error('payout worker start error', e?.message); }
 });
+
 setInterval(async () => {
   try {
     await simulateDailyYieldIfNeeded();
