@@ -159,7 +159,7 @@ app.use('/v1/admin', auth, manualActionsRouter);
 const port = Number(process.env.PORT || 8080);
 app.listen(port, '0.0.0.0', async () => {
   console.log(`API on ${port}`);
-  try { await runMigrations(); } catch (e:any) { console.error('migration error', e?.message); }
+  try { await runMigrations(); } catch (e:any) { console.error('migration error (non-fatal)', e?.message); }
   try { await ensurePiIntegration(); } catch (e: any) { console.error('pi bootstrap error', e?.message); }
   try { await ensureBootstrap(); } catch (e:any) { console.error('alloc bootstrap error', e?.message); }
   try { await clearApyScalingFlags(); } catch (e:any) { console.error('clear apy flags error', e?.message); }
