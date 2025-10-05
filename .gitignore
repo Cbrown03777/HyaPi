@@ -136,3 +136,6 @@ pgdata/
 !apps/api/src/data/
 !apps/api/src/data/govRepo.ts
 !apps/api/src/data/actionsRepo.ts
+# --- allow web lib utils for build ---
+!apps/web/src/lib/
+!apps/web/src/lib/*.ts
