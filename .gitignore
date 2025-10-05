@@ -129,3 +129,10 @@ pgdata/
 ############################
 # (intentionally not ignoring pnpm-lock.yaml to ensure reproducible builds)
 ############################
+# Existing rule (example) that currently ignores all data folders:
+# **/data/
+
+# ---- allow API repo code under src/data (but still ignore other data paths) ----
+!apps/api/src/data/
+!apps/api/src/data/govRepo.ts
+!apps/api/src/data/actionsRepo.ts
