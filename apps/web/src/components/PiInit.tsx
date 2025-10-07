@@ -1,7 +1,6 @@
 "use client";
 import * as React from 'react';
-
-declare global { interface Window { Pi?: any; __piReady?: boolean; __piInitError?: string } }
+import type { PiSDK } from '@/types/pi-sdk';
 
 // Best-effort initializer: marks ready as soon as Pi.authenticate exists; init does not gate readiness.
 export function PiInit() {
@@ -17,7 +16,7 @@ export function PiInit() {
         await new Promise(r => setTimeout(r, 100));
       }
       if (cancelled) return;
-      const Pi = (window as any).Pi;
+  const Pi = ((window as any).Pi) as PiSDK | undefined;
       // Mark ready immediately if authenticate present pre-init
       if (Pi?.authenticate) (window as any).__piReady = true;
       try {

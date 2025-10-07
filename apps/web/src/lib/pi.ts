@@ -1,26 +1,11 @@
 // apps/web/src/lib/pi.ts
-// Strong minimal Pi SDK typing + globals
-type PiAuthScope = 'username' | 'payments' | 'wallet';
-const ALLOWED_SCOPES: PiAuthScope[] = ['username', 'payments', 'wallet'];
-
-interface PiSDK {
-  init?: (opts: { version: string; network: string }) => void;
-  authenticate: (opts: { scopes: string[] }, onIncompletePaymentFound?: (payment: any) => void) => Promise<any>;
-  // createPayment kept as any (not used for auth typing scope bug)
-  [k: string]: any;
-}
+import type { PiAuthScope, PiSDK } from '@/types/pi-sdk';
 
 // Public auth/user result types
 export interface PiAuthUser { uid: string; username?: string }
 export interface PiLoginResult { uid: string; username: string; accessToken: string }
 
-declare global {
-  interface Window {
-    Pi?: PiSDK;
-    __piReady?: boolean; // legacy debug
-    __piInitError?: string;
-  }
-}
+const ALLOWED_SCOPES: PiAuthScope[] = ['username', 'payments', 'wallet'];
 
 // Relaxed readiness: we only require Pi.authenticate to exist.
 export async function waitForPiSDK(opts?: { timeoutMs?: number; intervalMs?: number }) {
