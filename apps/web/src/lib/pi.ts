@@ -55,33 +55,53 @@ export function installPiAuthShim(): void {
   const g: any = window as any;
   const Pi = g.Pi;
   if (!Pi || typeof Pi.authenticate !== 'function') return;
+
   const original = Pi.authenticate.bind(Pi);
-  Pi.authenticate = async (opts: any, onIncomplete?: (p: any) => void) => {
-    const diag = makeDiag({ scopes: opts?.scopes });
+
+  function coerceScopesArray(input: unknown): string[] {
+    const ALLOWED = ['username','payments','wallet'] as const;
+    if (Array.isArray(input)) {
+      return input
+        .flat()
+        .map(s => (typeof s === 'string' ? s.trim() : ''))
+        .filter(Boolean)
+        .filter(s => (ALLOWED as readonly string[]).includes(s));
+    }
+    if (typeof input === 'string') {
+      return input
+        .split(/[\,\s]+/g)
+        .map(s => s.trim())
+        .filter(Boolean)
+        .filter(s => (ALLOWED as readonly string[]).includes(s));
+    }
+    return ['username','payments'];
+  }
+
+  Pi.authenticate = async (optsOrScopes: any, onIncomplete?: (p: any) => void) => {
+    const scopesArr = (Array.isArray(optsOrScopes?.scopes) || typeof optsOrScopes?.scopes === 'string')
+      ? coerceScopesArray(optsOrScopes.scopes)
+      : coerceScopesArray(optsOrScopes);
+
+    (window as any).__piDebug = {
+      ...(window as any).__piDebug,
+      lastAuthCall: {
+        ts: new Date().toISOString(),
+        receivedType: Array.isArray(optsOrScopes) ? 'array' : typeof optsOrScopes,
+        receivedKeys: optsOrScopes && typeof optsOrScopes === 'object' ? Object.keys(optsOrScopes) : null,
+        coercedScopes: scopesArr
+      }
+    };
+    console.debug('[Pi.authenticate shim] calling SDK with array scopes:', scopesArr);
     try {
-      const normalized = coerceScopes(opts?.scopes);
-      diag.normalizedScopes = normalized;
-      const validInput = Array.isArray(opts?.scopes) || typeof opts?.scopes === 'string';
-      if (!validInput) {
-        diag.note = 'Invalid scopes type (must be array or string).';
-        console.error('[Pi auth diag]', diag);
-        throw Object.assign(new Error('Pi auth failed: invalid scopes type'), { diag });
-      }
-      if (!normalized.length) {
-        diag.note = 'Scopes normalized to empty (none are allowed).';
-        console.error('[Pi auth diag]', diag);
-        throw Object.assign(new Error('Pi auth failed: no valid scopes provided'), { diag });
-      }
-      const safe = { ...(opts || {}), scopes: normalized };
-      console.debug('[Pi auth diag OK]', diag);
-      return await original(safe, onIncomplete);
-    } catch (err) {
-      if (!(err as any).diag) (err as any).diag = diag;
-      throw err;
+      return await original(scopesArr, onIncomplete);
+    } catch (err: any) {
+      console.warn('[Pi.authenticate shim] array form failed, retrying with object form', err?.message);
+      return await original({ scopes: scopesArr }, onIncomplete);
     }
   };
+
   __shimInstalled = true;
-  console.debug('[Pi.authenticate shim] installed');
+  console.debug('[Pi.authenticate shim] installed (array-first fallback-to-object)');
 }
 
 // Relaxed readiness: we only require Pi.authenticate to exist.
@@ -120,10 +140,10 @@ export function normalizeScopes(input?: unknown, fallback: PiAuthScope[] = ['use
 
 // New robust login helper (source of truth going forward)
 export async function piLogin(rawScopes?: unknown): Promise<PiLoginResult> {
-  const Pi = await waitForPiSDK(); // shim ensured
-  const scopes = coerceScopes(rawScopes, ['username','payments']);
+  const Pi = await waitForPiSDK();
+  const desiredScopes = rawScopes ?? ['username','payments'];
   try {
-    const res = await Pi.authenticate({ scopes }, (p:any) => console.debug('[Pi incomplete payment]', p?.identifier));
+    const res = await Pi.authenticate(desiredScopes, (p:any)=>console.debug('[Pi] incomplete payment', p?.identifier));
     const uid = res?.user?.uid || res?.user?.username || '';
     const username = (res?.user?.username || res?.user?.uid || '').toString();
     const accessToken = res?.accessToken || res?.access_token || '';
@@ -131,7 +151,7 @@ export async function piLogin(rawScopes?: unknown): Promise<PiLoginResult> {
     return { uid, username, accessToken };
   } catch (e:any) {
     console.error('[piLogin error]', e?.message, e?.diag || {});
-    throw e; // propagate with diagnostics
+    throw e;
   }
 }
 

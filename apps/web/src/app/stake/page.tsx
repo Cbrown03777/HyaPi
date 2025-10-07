@@ -216,7 +216,9 @@ export default function StakePage() {
       setToken(accessToken); setPiUser({ uid, username } as PiUser); (globalThis as any).hyapiBearer = accessToken;
     } catch (e:any) {
       setAuthError(e?.message || 'Login failed');
-      setAuthDiag(e?.diag || null);
+      const dbg = (typeof window !== 'undefined' ? (window as any).__piDebug?.lastAuthCall : null);
+      const base = e?.diag || {};
+      setAuthDiag(dbg ? { ...base, lastAuthCall: dbg } : (Object.keys(base).length ? base : null));
     } finally { setAuthLoading(false); }
   }
 
