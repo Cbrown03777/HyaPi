@@ -10,6 +10,10 @@ interface PiSDK {
   [k: string]: any;
 }
 
+// Public auth/user result types
+export interface PiAuthUser { uid: string; username?: string }
+export interface PiLoginResult { uid: string; username: string; accessToken: string }
+
 declare global {
   interface Window {
     Pi?: PiSDK;
@@ -61,7 +65,7 @@ export function normalizeScopes(input?: unknown, fallback: PiAuthScope[] = ['use
 }
 
 // New robust login helper (source of truth going forward)
-export async function piLogin(rawScopes?: unknown): Promise<{ uid: string; accessToken: string }> {
+export async function piLogin(rawScopes?: unknown): Promise<PiLoginResult> {
   const Pi = await waitForPiSDK();
   const scopes = normalizeScopes(rawScopes, ['username','payments']);
   // HARD GUARDRAILS
@@ -76,9 +80,10 @@ export async function piLogin(rawScopes?: unknown): Promise<{ uid: string; acces
   try {
     const res = await Pi.authenticate({ scopes }, onIncompletePaymentFound);
     const uid = res?.user?.uid || res?.user?.username || '';
+    const username = (res?.user?.username || res?.user?.uid || '').toString();
     const accessToken = res?.accessToken || res?.access_token || '';
     if (!uid || !accessToken) throw new Error('Pi authenticate returned no uid or access token');
-    return { uid, accessToken };
+    return { uid, username, accessToken };
   } catch (e:any) {
     console.error('[piLogin] authenticate failed:', e);
     throw new Error(e?.message || 'Pi authenticate failed');
@@ -88,7 +93,6 @@ export async function piLogin(rawScopes?: unknown): Promise<{ uid: string; acces
 // Compat shim for legacy callers expecting a bearer token string
 export async function signInWithPi(): Promise<string> {
   const { accessToken } = await piLogin();
-  if (!accessToken) throw new Error('Missing access token from Pi authenticate');
   return accessToken;
 }
 
