@@ -57,6 +57,7 @@ export default function StakePage() {
   const [piUser, setPiUser] = useState<PiUser | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authDiag, setAuthDiag] = useState<any>(null);
   const [piInitState, setPiInitState] = useState<'idle'|'waiting'|'ready'|'failed'>('idle');
   // Metrics KPI (7-day EMA APY)
   const [apy7d, setApy7d] = useState<number | null>(null);
@@ -209,12 +210,13 @@ export default function StakePage() {
   const quickPercents = [25, 50, 75, 100];
 
   async function handleLogin() {
-    setAuthError(null); setAuthLoading(true);
+    setAuthError(null); setAuthDiag(null); setAuthLoading(true);
     try {
       const { uid, accessToken, username } = await piLogin();
       setToken(accessToken); setPiUser({ uid, username } as PiUser); (globalThis as any).hyapiBearer = accessToken;
     } catch (e:any) {
       setAuthError(e?.message || 'Login failed');
+      setAuthDiag(e?.diag || null);
     } finally { setAuthLoading(false); }
   }
 
@@ -276,7 +278,19 @@ export default function StakePage() {
                 <Typography variant="caption" color="warning.main">Pi SDK not detected. Open in Pi Browser and ensure the exact domain is whitelisted.</Typography>
               )}
               <Button variant="contained" onClick={handleLogin} disabled={authLoading || piInitState==='waiting'}>{authLoading? 'Connecting…':'Log in with Pi'}</Button>
-              {authError && <Typography variant="caption" color="error">{authError}</Typography>}
+              {authError && (
+                <Box>
+                  <Typography variant="caption" color="error">{authError}</Typography>
+                  {authDiag && (
+                    <Box mt={1} sx={{ border:'1px dashed', borderColor:'divider', p:1, borderRadius:1, maxHeight:220, overflow:'auto' }}>
+                      <Typography variant="caption" sx={{ fontWeight:600, display:'block', mb:0.5 }}>Diagnostics</Typography>
+                      <Typography component="pre" variant="caption" sx={{ whiteSpace:'pre-wrap', wordBreak:'break-word', fontFamily:'monospace', fontSize:10, m:0 }}>
+                        {JSON.stringify(authDiag, null, 2)}
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              )}
               <Typography variant="caption" sx={{ opacity:0.45 }}>Pi Browser UA match: {isPiBrowser() ? 'yes':'no'} (non-blocking)</Typography>
               <Typography variant="caption" sx={{ opacity:0.45 }}>Auth uses detected Pi SDK only; UA is informational.</Typography>
             </Stack>
