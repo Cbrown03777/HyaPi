@@ -1,5 +1,22 @@
 // apps/web/src/lib/pi.ts
-declare global { interface Window { Pi?: any; __piReady?: boolean; __piInitError?: string } }
+// Strong minimal Pi SDK typing + globals
+type PiAuthScope = 'username' | 'payments' | 'wallet';
+const ALLOWED_SCOPES: PiAuthScope[] = ['username', 'payments', 'wallet'];
+
+interface PiSDK {
+  init?: (opts: { version: string; network: string }) => void;
+  authenticate: (opts: { scopes: string[] }, onIncompletePaymentFound?: (payment: any) => void) => Promise<any>;
+  // createPayment kept as any (not used for auth typing scope bug)
+  [k: string]: any;
+}
+
+declare global {
+  interface Window {
+    Pi?: PiSDK;
+    __piReady?: boolean; // legacy debug
+    __piInitError?: string;
+  }
+}
 
 // Relaxed readiness: we only require Pi.authenticate to exist.
 export async function waitForPiSDK(opts?: { timeoutMs?: number; intervalMs?: number }) {
@@ -30,60 +47,38 @@ export function isPiBrowser(): boolean {
   try { return /PiBrowser/i.test(navigator.userAgent || ''); } catch { return false; }
 }
 
-// ---- Scope normalization ----
-const ALLOWED_SCOPES = ['username', 'payments', 'wallet'] as const;
-type AllowedScope = (typeof ALLOWED_SCOPES)[number];
-
-export function normalizeScopes(input?: unknown, fallback: AllowedScope[] = ['username','payments']): AllowedScope[] {
+// ---- Scope normalization (returns plain string[]) ----
+export function normalizeScopes(input?: unknown, fallback: PiAuthScope[] = ['username','payments']): string[] {
   if (Array.isArray(input)) {
-    const cleaned = input
-      .map(s => (typeof s === 'string' ? s.trim() : ''))
-      .filter(Boolean) as string[];
-    return cleaned.filter(s => (ALLOWED_SCOPES as readonly string[]).includes(s)) as AllowedScope[];
+    const arr = (input as any[]).flat().map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean);
+    return arr.filter(s => ALLOWED_SCOPES.includes(s as PiAuthScope));
   }
   if (typeof input === 'string') {
     const parts = input.split(/[\,\s]+/g).map(s => s.trim()).filter(Boolean);
-    return parts.filter(s => (ALLOWED_SCOPES as readonly string[]).includes(s)) as AllowedScope[];
+    return parts.filter(s => ALLOWED_SCOPES.includes(s as PiAuthScope));
   }
-  return fallback;
-}
-
-export async function signInWithPi(): Promise<{ accessToken: string; uid: string; username?: string } | string> {
-  if (typeof window === 'undefined') return 'dev pi_dev_address:1';
-  try { await waitForPiSDK({ timeoutMs: 7000 }); } catch { return 'dev pi_dev_address:1'; }
-  const Pi = (window as any).Pi;
-  try {
-    const authRes = await Pi.authenticate(
-      { scopes: ['payments', 'username'] },
-      onIncompletePaymentFound
-    );
-    const { accessToken, user } = authRes;
-    return { accessToken, uid: user?.uid, username: user?.username };
-  } catch (e) {
-    console.error('Pi auth failed', e);
-    return 'dev pi_dev_address:1';
-  }
-  function onIncompletePaymentFound(payment: any) { console.log('incomplete payment found', payment); }
+  return [...fallback];
 }
 
 // New robust login helper (source of truth going forward)
-export async function piLogin(rawScopes?: unknown): Promise<{ uid: string; accessToken: string; username?: string }> {
+export async function piLogin(rawScopes?: unknown): Promise<{ uid: string; accessToken: string }> {
   const Pi = await waitForPiSDK();
-  console.debug('[piLogin] Pi present:', !!Pi, 'has authenticate:', !!Pi?.authenticate);
   const scopes = normalizeScopes(rawScopes, ['username','payments']);
-  if (!Array.isArray(scopes) || scopes.length === 0) throw new Error('No valid Pi scopes selected');
-  console.debug('[piLogin] using scopes:', scopes);
+  // HARD GUARDRAILS
+  if (!Array.isArray(scopes)) throw new Error('Internal: scopes is not an array');
+  if (!scopes.every(s => typeof s === 'string')) throw new Error('Internal: scopes contains non-string');
+  if (scopes.length === 0) throw new Error('Internal: no valid scopes selected');
+  console.debug('[piLogin] scopes validated:', scopes);
+  if (!Array.isArray(scopes)) throw new Error('Internal: scopes not array at call site');
   const onIncompletePaymentFound = (payment: any) => {
-    console.debug('[piLogin] incomplete payment found', payment?.identifier || payment?.id || '');
+    console.debug('[pi] incomplete payment found', payment?.identifier);
   };
   try {
-    const authResult = await Pi.authenticate({ scopes }, onIncompletePaymentFound);
-    console.debug('[piLogin] auth result keys:', Object.keys(authResult || {}));
-    const uid = authResult?.user?.uid || authResult?.user?.username || '';
-    const accessToken = authResult?.accessToken || authResult?.access_token || '';
-    const username = authResult?.user?.username;
+    const res = await Pi.authenticate({ scopes }, onIncompletePaymentFound);
+    const uid = res?.user?.uid || res?.user?.username || '';
+    const accessToken = res?.accessToken || res?.access_token || '';
     if (!uid || !accessToken) throw new Error('Pi authenticate returned no uid or access token');
-    return { uid, accessToken, username };
+    return { uid, accessToken };
   } catch (e:any) {
     console.error('[piLogin] authenticate failed:', e);
     throw new Error(e?.message || 'Pi authenticate failed');
