@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { z } from 'zod';
+import { approvePayment as serverApprovePayment, completePayment as serverCompletePayment } from '../services/pi';
 import { db, withTx } from '../services/db';
 import { platformApprove, platformComplete, platformCreateA2U, platformGetPayment } from '../services/piPlatform';
 import { createA2U } from '../services/piA2U';
@@ -87,6 +89,31 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ success: false, error: { code: 'COMPLETE_FAIL', message: e.message } });
+  }
+});
+
+// New SDK callback endpoints (array signature style) - approve
+piRouter.post('/payments/:id/approve', async (req, res) => {
+  try {
+    const id = z.string().min(1).parse(req.params.id);
+    const dto = await serverApprovePayment(id);
+    return res.json({ success: true, data: dto });
+  } catch (e: any) {
+    const status = e?.response?.status ?? 500;
+    return res.status(status).json({ success: false, error: { code: 'APPROVE_FAILED', status, body: e?.response?.data ?? null } });
+  }
+});
+
+// New SDK callback endpoints - complete
+piRouter.post('/payments/:id/complete', async (req, res) => {
+  try {
+    const id = z.string().min(1).parse(req.params.id);
+    const txid = z.string().min(4).parse(req.body?.txid);
+    const dto = await serverCompletePayment(id, txid);
+    return res.json({ success: true, data: dto });
+  } catch (e: any) {
+    const status = e?.response?.status ?? 500;
+    return res.status(status).json({ success: false, error: { code: 'COMPLETE_FAILED', status, body: e?.response?.data ?? null } });
   }
 });
 
