@@ -48,6 +48,28 @@ export async function signInWithPi(): Promise<{ accessToken: string; uid: string
   function onIncompletePaymentFound(payment: any) { console.log('incomplete payment found', payment); }
 }
 
+// New robust login helper (source of truth going forward)
+export async function piLogin(): Promise<{ uid: string; accessToken: string; username?: string }> {
+  const Pi = await waitForPiSDK();
+  console.debug('[piLogin] Pi present:', !!Pi, 'has authenticate:', !!Pi?.authenticate);
+  try {
+    const scopes = ['username','payments'];
+    const onIncompletePaymentFound = (payment: any) => {
+      console.debug('[piLogin] incomplete payment found', payment?.identifier || payment?.id || '');
+    };
+    const authResult = await Pi.authenticate({ scopes }, onIncompletePaymentFound);
+    console.debug('[piLogin] auth result keys:', Object.keys(authResult || {}));
+    const uid = authResult?.user?.uid || authResult?.user?.username || '';
+    const accessToken = authResult?.accessToken || authResult?.access_token || '';
+    const username = authResult?.user?.username;
+    if (!uid || !accessToken) throw new Error('Pi authenticate returned no uid or access token');
+    return { uid, accessToken, username };
+  } catch (e:any) {
+    console.error('[piLogin] authenticate failed:', e);
+    throw new Error(e?.message || 'Pi authenticate failed');
+  }
+}
+
 export async function startDeposit(amountPi: number, token: string, memo = 'HyaPi stake deposit', metadata: any = {}) {
   const Pi = (globalThis as any).Pi;
   if (!Pi) throw new Error('Pi SDK not present');

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { GOV_API_BASE } from '@hyapi/shared';
 import axios from 'axios';
-import { signInWithPi, startDeposit, waitForPiSDK, isPiBrowser } from '@/lib/pi';
+import { signInWithPi, startDeposit, waitForPiSDK, isPiBrowser, piLogin } from '@/lib/pi';
 import { useToast } from '@/components/ToastProvider';
 import { useActivity } from '@/components/ActivityProvider';
 import { ActivityPanel } from '@/components/ActivityPanel';
@@ -211,17 +211,10 @@ export default function StakePage() {
   async function handleLogin() {
     setAuthError(null); setAuthLoading(true);
     try {
-      await waitForPiSDK({ timeoutMs: 6000 });
-      const res = await signInWithPi();
-      if (typeof res === 'object' && 'accessToken' in res) {
-        setToken(res.accessToken); setPiUser({ uid: res.uid, username: res.username } as PiUser); (globalThis as any).hyapiBearer = res.accessToken;
-      } else {
-        throw new Error('Pi SDK unavailable');
-      }
+      const { uid, accessToken, username } = await piLogin();
+      setToken(accessToken); setPiUser({ uid, username } as PiUser); (globalThis as any).hyapiBearer = accessToken;
     } catch (e:any) {
-      const msg = e?.message || 'Login failed';
-      const hint = /whitelist|available|domain/i.test(msg) ? ' This domain must be whitelisted in the Pi Developer Portal.' : ' Open this page inside Pi Browser.';
-      setAuthError(msg + hint);
+      setAuthError(e?.message || 'Login failed');
     } finally { setAuthLoading(false); }
   }
 
@@ -284,8 +277,8 @@ export default function StakePage() {
               )}
               <Button variant="contained" onClick={handleLogin} disabled={authLoading || piInitState==='waiting'}>{authLoading? 'Connecting…':'Log in with Pi'}</Button>
               {authError && <Typography variant="caption" color="error">{authError}</Typography>}
-              <Typography variant="caption" sx={{ opacity:0.6 }}>Detected Pi Browser: {isPiBrowser() ? 'yes':'no'}</Typography>
-              <Typography variant="caption" sx={{ opacity:0.6 }}>Use the Pi Browser to authenticate and initiate payments.</Typography>
+              <Typography variant="caption" sx={{ opacity:0.45 }}>Pi Browser UA match: {isPiBrowser() ? 'yes':'no'} (non-blocking)</Typography>
+              <Typography variant="caption" sx={{ opacity:0.45 }}>Auth uses detected Pi SDK only; UA is informational.</Typography>
             </Stack>
           </CardContent>
         </Card>
