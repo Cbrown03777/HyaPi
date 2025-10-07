@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { GOV_API_BASE } from '@hyapi/shared';
 import axios from 'axios';
-import { signInWithPi, startDeposit, waitForPiSDK, isPiBrowser, piLogin } from '@/lib/pi';
+import { signInWithPi, startDeposit, waitForPiSDK, isPiBrowser, piLogin, serverApprove, serverComplete } from '@/lib/pi';
+import { PiDebugPanel } from '@/components/PiDebugPanel';
 import { useToast } from '@/components/ToastProvider';
 import { useActivity } from '@/components/ActivityProvider';
 import { ActivityPanel } from '@/components/ActivityPanel';
@@ -222,13 +223,38 @@ export default function StakePage() {
     } finally { setAuthLoading(false); }
   }
 
+  function dbg(msg:string, obj?:any){ (globalThis as any).__pidbg?.log?.(msg, obj); }
+
   async function submitStake() {
     if (!piUser || !token || invalidReason) return;
     setBusy(true); setMsg(null);
     const opId = crypto.randomUUID();
     activity.log({ id: opId, kind: 'stake', title: `Staking ${fmtCompact(numericAmt)} Pi`, detail: `lock ${weeks}w`, status: 'in-flight' });
     try {
-      await startDeposit(numericAmt, token, 'HyaPi stake deposit', { lockupWeeks: weeks });
+      dbg('startDeposit', { amount: numericAmt, weeks });
+      const Pi = (globalThis as any).Pi;
+      if (Pi) {
+        const paymentData = { amount: numericAmt, memo: 'HyaPi stake deposit', metadata: { lockupWeeks: weeks } };
+        const callbacks = {
+          onReadyForServerApproval: async (paymentId: string) => {
+            dbg('onReadyForServerApproval', { paymentId });
+            try { const r = await serverApprove(paymentId); dbg('serverApprove ok', r); }
+            catch(e:any){ dbg('serverApprove ERR', { paymentId, msg: e?.message }); }
+          },
+          onReadyForServerCompletion: async (paymentId: string, txid: string) => {
+            dbg('onReadyForServerCompletion', { paymentId, txid });
+            try { const r = await serverComplete(paymentId, txid); dbg('serverComplete ok', r); }
+            catch(e:any){ dbg('serverComplete ERR', { paymentId, msg: e?.message }); }
+          },
+          onCancel: (paymentId: string) => dbg('onCancel', { paymentId }),
+          onError: (error: any, paymentId: string) => dbg('onError', { paymentId, err: String(error) }),
+        };
+        dbg('createPayment call', paymentData);
+        const p = await Pi.createPayment(paymentData, callbacks);
+        dbg('createPayment returned', { identifier: p?.identifier });
+      } else {
+        await startDeposit(numericAmt, token, 'HyaPi stake deposit', { lockupWeeks: weeks });
+      }
       const m = `Payment submitted. You'll see your stake after completion.`;
       setMsg(m);
       toast.success(m);
@@ -486,6 +512,7 @@ export default function StakePage() {
           <Button variant="contained" onClick={() => { setPreviewOpen(false); submitStake(); }} disabled={busy || !!invalidReason}>Confirm & Stake</Button>
         </DialogActions>
       </Dialog>
+      {(typeof window !== 'undefined') && <PiDebugPanel />}
     </Box>
   );
 }

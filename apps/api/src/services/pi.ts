@@ -8,18 +8,18 @@ function keyHeader() {
   return { Authorization: `Key ${PI_KEY}` };
 }
 
-// MUST use Server API Key for approve/complete
+// MUST use Server API Key for approve/complete with verbose logging
 export async function approvePayment(paymentId: string) {
   const url = `${PI_BASE}/payments/${paymentId}/approve`;
+  console.log('[pi/approve->Pi]', { url, ts: new Date().toISOString(), authScheme: 'Key', keyPrefix: (PI_KEY||'').slice(0,6) });
   try {
-    const { data } = await axios.post(url, null, { headers: keyHeader() });
+    const { data, status } = await axios.post(url, null, { headers: keyHeader(), timeout: 15_000 });
+    console.log('[pi/approve<-Pi]', { status, snippet: JSON.stringify(data).slice(0,200) });
     return data;
   } catch (err: any) {
-    const status = err?.response?.status;
-    const body = err?.response?.data;
-    console.error('[pi/approve] status', status, 'body', body);
-    if (status === 401 || status === 403) {
-      console.warn('[pi/auth] using Server Key scheme, key prefix:', (PI_KEY || '').slice(0,6));
+    console.error('[pi/approve ERR]', { status: err?.response?.status, data: err?.response?.data, ts: new Date().toISOString() });
+    if (err?.response?.status === 401 || err?.response?.status === 403) {
+      console.warn('[pi/auth] using Server Key scheme, key prefix:', (PI_KEY||'').slice(0,6));
     }
     throw err;
   }
@@ -27,15 +27,15 @@ export async function approvePayment(paymentId: string) {
 
 export async function completePayment(paymentId: string, txid: string) {
   const url = `${PI_BASE}/payments/${paymentId}/complete`;
+  console.log('[pi/complete->Pi]', { url, ts: new Date().toISOString(), txid });
   try {
-    const { data } = await axios.post(url, { txid }, { headers: keyHeader() });
+    const { data, status } = await axios.post(url, { txid }, { headers: keyHeader(), timeout: 15_000 });
+    console.log('[pi/complete<-Pi]', { status, snippet: JSON.stringify(data).slice(0,200) });
     return data;
   } catch (err: any) {
-    const status = err?.response?.status;
-    const body = err?.response?.data;
-    console.error('[pi/complete] status', status, 'body', body);
-    if (status === 401 || status === 403) {
-      console.warn('[pi/auth] using Server Key scheme, key prefix:', (PI_KEY || '').slice(0,6));
+    console.error('[pi/complete ERR]', { status: err?.response?.status, data: err?.response?.data, ts: new Date().toISOString() });
+    if (err?.response?.status === 401 || err?.response?.status === 403) {
+      console.warn('[pi/auth] using Server Key scheme, key prefix:', (PI_KEY||'').slice(0,6));
     }
     throw err;
   }

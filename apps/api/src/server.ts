@@ -6,6 +6,7 @@
 import path from 'node:path';
 import dotenv from 'dotenv';
 import express from 'express';
+import morgan from 'morgan';
 import cors from 'cors';
 import helmet from 'helmet';
 
@@ -74,9 +75,28 @@ const corsOptions: cors.CorsOptions = {
 };
 
 const app = express();
+const DEBUG_PI = process.env.DEBUG_PI === '1';
 app.use(helmet({contentSecurityPolicy: false}));
 app.use(express.json());
 app.use(cors(corsOptions));
+// Compact logger for all requests
+app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
+// Body logger for Pi routes when DEBUG_PI=1
+app.use((req, _res, next) => {
+  if (DEBUG_PI && req.url.startsWith('/v1/pi')) {
+    console.log('[pi:req]', {
+      method: req.method,
+      url: req.url,
+      headers: {
+        origin: req.headers.origin,
+        authorization: req.headers.authorization ? '<present>' : '<absent>'
+      },
+      body: req.body ?? null,
+      ts: new Date().toISOString()
+    });
+  }
+  next();
+});
 // Public health endpoints
 app.get('/v1/health', (_req,res)=>{
   try {

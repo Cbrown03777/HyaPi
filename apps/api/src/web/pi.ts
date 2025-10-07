@@ -94,27 +94,43 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
 
 // New SDK callback endpoints (array signature style) - approve
 piRouter.post('/payments/:id/approve', async (req, res) => {
+  const id = z.string().min(1).parse(req.params.id);
+  console.log('[pi/api approve] inbound', { id, ts: new Date().toISOString() });
   try {
-    const id = z.string().min(1).parse(req.params.id);
     const dto = await serverApprovePayment(id);
+    console.log('[pi/api approve] ok', { id });
     return res.json({ success: true, data: dto });
   } catch (e: any) {
     const status = e?.response?.status ?? 500;
-    return res.status(status).json({ success: false, error: { code: 'APPROVE_FAILED', status, body: e?.response?.data ?? null } });
+    console.error('[pi/api approve] fail', { id, status, body: e?.response?.data });
+    return res.status(status).json({ success: false, error: { code: 'APPROVE_FAILED', status } });
   }
 });
 
 // New SDK callback endpoints - complete
 piRouter.post('/payments/:id/complete', async (req, res) => {
+  const id = z.string().min(1).parse(req.params.id);
+  const txid = z.string().min(4).parse(req.body?.txid);
+  console.log('[pi/api complete] inbound', { id, txid, ts: new Date().toISOString() });
   try {
-    const id = z.string().min(1).parse(req.params.id);
-    const txid = z.string().min(4).parse(req.body?.txid);
     const dto = await serverCompletePayment(id, txid);
+    console.log('[pi/api complete] ok', { id });
     return res.json({ success: true, data: dto });
   } catch (e: any) {
     const status = e?.response?.status ?? 500;
-    return res.status(status).json({ success: false, error: { code: 'COMPLETE_FAILED', status, body: e?.response?.data ?? null } });
+    console.error('[pi/api complete] fail', { id, status, body: e?.response?.data });
+    return res.status(status).json({ success: false, error: { code: 'COMPLETE_FAILED', status } });
   }
+});
+
+// Debug echo endpoint to verify connectivity/CORS
+piRouter.post('/debug/echo', (req, res) => {
+  return res.json({
+    ok: true,
+    ts: new Date().toISOString(),
+    headers: { origin: req.headers.origin, auth: !!req.headers.authorization },
+    body: req.body ?? null
+  });
 });
 
 piRouter.post('/payout', async (req, res) => {
