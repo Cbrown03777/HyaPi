@@ -6,7 +6,8 @@ import { signInWithPi } from '@/lib/pi';
 import { useToast } from '@/components/ToastProvider';
 import { useActivity } from '@/components/ActivityProvider';
 import { ActivityPanel } from '@/components/ActivityPanel';
-import { fmtNumber, fmtCompact } from '@/lib/format';
+import { fmtNumber, fmtCompact, fmtPercent } from '@/lib/format';
+import { fetchPortfolioMetrics } from '@/lib/metrics';
 import {
   Box,
   Card,
@@ -29,7 +30,8 @@ import {
   Divider,
   Paper,
   Tooltip,
-  Chip
+  Chip,
+  Skeleton
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 // No need to fetch boost config for ranges; use local rules per product spec.
@@ -50,6 +52,10 @@ export default function StakePage() {
   const [busy, setBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [balance, setBalance] = useState<number>(1000);
+  // Metrics KPI (7-day EMA APY)
+  const [apy7d, setApy7d] = useState<number | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [metricsErr, setMetricsErr] = useState<string | null>(null);
   const toast = useToast();
   const activity = useActivity();
   // Voting boost by lockup duration (affects voting power only; APY unchanged)
@@ -97,6 +103,16 @@ export default function StakePage() {
         }
         // per-user APY scaling removed: ignore lock curve
       } catch { /* silent */ }
+      // Fetch portfolio metrics for 7-day EMA APY (Home parity)
+      try {
+        setMetricsLoading(true);
+        const m = await fetchPortfolioMetrics();
+        setApy7d(m.apy7d ?? null);
+      } catch (e:any) {
+        setMetricsErr(e?.message || 'Failed to load');
+      } finally {
+        setMetricsLoading(false);
+      }
     })();
   }, []);
 
@@ -106,7 +122,8 @@ export default function StakePage() {
   const userScaledApy = baseDisplayed;
   const baselineApy = baseDisplayed;
   // Platform Net APY (smoothed to match Home when available)
-  const platformNetApy = emaNetApy ?? baseNetApy; // decimal
+  // Use portfolio metrics apy7d (EMA7) as single source of truth; fallback to emaNetApy/summary
+  const platformNetApy = (apy7d != null ? apy7d : (emaNetApy ?? baseNetApy)); // decimal
 
   async function submit() {
     setMsg(null);
@@ -165,7 +182,8 @@ export default function StakePage() {
   }
 
   // simple client-side estimate: linear APY pro-rated by weeks; hyaPi minted 1:1 + yield
-  const apy = userScaledApy; // decimal
+  // For now protocol APY equals platform net APY (no per-user scaling in current model)
+  const apy = platformNetApy; // decimal
   const estFinal = amt * (1 + apy * (weeks / 52));
   const isDev = token.startsWith('dev ');
   const invalidReason = !Number.isFinite(amt) || amt <= 0
@@ -188,6 +206,27 @@ export default function StakePage() {
       <Typography variant="h5" fontWeight={600} gutterBottom>
         Stake Pi → receive hyaPi (1:1)
       </Typography>
+
+      {/* 7-day EMA APY KPI */}
+      <Box mb={3}>
+        <Card variant="outlined" sx={{ maxWidth: 360 }}>
+          <CardContent>
+            <Typography variant="overline" sx={{ color: 'text.secondary' }}>7-day APY (EMA)</Typography>
+            {metricsLoading ? (
+              <Typography variant="h4" sx={{ fontWeight:700, lineHeight:1 }}><span style={{display:'inline-block',width:140}}><Skeleton variant="text" height={42} /></span></Typography>
+            ) : metricsErr ? (
+              <Typography variant="body2" color="error">{metricsErr}</Typography>
+            ) : (
+              <Typography variant="h4" sx={{ fontWeight:700 }}>
+                {apy7d != null ? fmtPercent(apy7d * 100, 2) : '—'}
+              </Typography>
+            )}
+            <Typography variant="caption" sx={{ color:'text.secondary', display:'block', mt:0.5 }}>
+              Based on recent PPS changes (EMA7). Updates daily.
+            </Typography>
+          </CardContent>
+        </Card>
+      </Box>
 
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} mt={1} alignItems="stretch">
         {/* Amount Card */}
@@ -266,7 +305,7 @@ export default function StakePage() {
                   <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
                     <Typography variant="body2">Platform Net APY:</Typography>
                     <Typography fontWeight={600} fontSize={14}>{(platformNetApy * 100).toFixed(2)}%</Typography>
-                    {emaNetApy != null && <Chip size="small" label="EMA7" variant="outlined" sx={{ height: 18, fontSize: 10 }} />}
+                    {apy7d != null && <Chip size="small" label="EMA7" variant="outlined" sx={{ height: 18, fontSize: 10 }} />}
                   </Box>
                   <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
                     <Typography variant="body2">Base {showGross ? 'Gross' : 'Net'} Platform APY:</Typography>
