@@ -10,6 +10,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 
 import { proposalsRouter } from './web/proposals';
+import { piRoutesPayments } from './web/piPayments';
 import { votesRouter } from './web/votes';
 import { finalizeRouter } from './web/finalize';
 import { executeRouter } from './web/execute';
@@ -96,8 +97,24 @@ app.get('/v1/health/prices', async (_req, res) => {
   }
 });
 app.get('/health', (_req,res)=>res.json({ ok:true, time:new Date().toISOString() })); // legacy public
+// Pi payment server credential health
+import axios from 'axios';
+app.get('/v1/health/pi', async (_req, res) => {
+  const PI_API_BASE = process.env.PI_API_BASE ?? 'https://api.minepi.com/v2';
+  try {
+    const scheme = process.env.PI_SERVER_AUTH_SCHEME || 'Key';
+    const secret = process.env.PI_APP_SECRET || process.env.PI_API_KEY || '';
+    if (!secret) throw new Error('no secret configured');
+    const r = await axios.get(`${PI_API_BASE}/payments?limit=1`, { headers: { Authorization: `${scheme} ${secret}` }, timeout: 8000 });
+    res.json({ ok: true, status: r.status, network: process.env.PI_NETWORK || 'unknown' });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e?.message || 'unhealthy', network: process.env.PI_NETWORK || 'unknown' });
+  }
+});
 // Public venues rates and public alloc history before auth
 app.use('/v1/venues', venuesRouter);
+// Public Pi payment approval/completion (called rapidly from client during SDK flow)
+app.use('/v1/pi', piRoutesPayments);
 app.use('/v1/alloc', allocGovPublicRouter);
 // Public governance config (boost terms)
 app.use('/v1/gov', govBoostPublicRouter);

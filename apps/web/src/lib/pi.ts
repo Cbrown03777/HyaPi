@@ -165,24 +165,46 @@ export async function startDeposit(amountPi: number, token: string, memo = 'HyaP
   const Pi = (globalThis as any).Pi;
   if (!Pi) throw new Error('Pi SDK not present');
   const paymentData = { amount: amountPi, memo, metadata };
-  const base = process.env.NEXT_PUBLIC_GOV_API_BASE || '/api';
+  const base = process.env.NEXT_PUBLIC_API_BASE || process.env.NEXT_PUBLIC_GOV_API_BASE || '/api';
   const callbacks = {
     onReadyForServerApproval: async (paymentId: string) => {
-      await fetch(`${base}/v1/pi/approve/${paymentId}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      console.debug('[Pi] onReadyForServerApproval', paymentId);
+      try {
+        // New body-based public endpoint (no bearer required)
+        await fetch(`${base}/v1/pi/approve`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ paymentId }) });
+      } catch (e) {
+        console.warn('server approve (public) failed, trying auth route', (e as any)?.message);
+        try {
+          await fetch(`${base}/v1/pi/approve/${paymentId}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+        } catch(err){ console.error('server approve fallback failed', (err as any)?.message); }
+      }
     },
     onReadyForServerCompletion: async (paymentId: string, txid: string) => {
-      await fetch(`${base}/v1/pi/complete/${paymentId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ txid }),
-      });
+      console.debug('[Pi] onReadyForServerCompletion', paymentId, txid);
+      try {
+        await fetch(`${base}/v1/pi/complete`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ paymentId }) });
+      } catch (e) {
+        console.warn('server complete (public) failed, trying auth route', (e as any)?.message);
+        try {
+          await fetch(`${base}/v1/pi/complete/${paymentId}`, { method: 'POST', headers: { 'Content-Type':'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ txid }) });
+        } catch(err){ console.error('server complete fallback failed', (err as any)?.message); }
+      }
     },
     onCancel: (paymentId: string) => console.log('payment canceled', paymentId),
     onError: (error: any, paymentId: string) => console.error('payment error', error, paymentId),
   };
   return Pi.createPayment(paymentData, callbacks);
+}
+
+// Public helpers (explicit) for manual server approval/completion if needed elsewhere
+export async function approveOnServer(paymentId: string): Promise<void> {
+  const base = process.env.NEXT_PUBLIC_API_BASE || '/api';
+  const r = await fetch(`${base}/v1/pi/approve`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ paymentId }) });
+  if (!r.ok) throw new Error('server approve failed');
+}
+export async function completeOnServer(paymentId: string): Promise<void> {
+  const base = process.env.NEXT_PUBLIC_API_BASE || '/api';
+  const r = await fetch(`${base}/v1/pi/complete`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ paymentId }) });
+  if (!r.ok) throw new Error('server complete failed');
 }
 
