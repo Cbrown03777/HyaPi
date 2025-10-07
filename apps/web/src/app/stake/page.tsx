@@ -80,14 +80,6 @@ export default function StakePage() {
       try {
         await waitForPiSDK({ timeoutMs: 6000 });
         setPiInitState('ready');
-        // Optional silent auth attempt
-        const maybe = await signInWithPi();
-        if (typeof maybe === 'object' && 'accessToken' in maybe) {
-          const t = maybe.accessToken;
-          setToken(t);
-          setPiUser({ uid: maybe.uid, username: maybe.username } as PiUser);
-          (globalThis as any).hyapiBearer = t;
-        }
       } catch {
         setPiInitState('failed');
       }

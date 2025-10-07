@@ -7,6 +7,7 @@ import { NavBar } from '@/components/NavBar'
 import { BottomNav } from '@/components/BottomNav'
 import { Inter } from 'next/font/google'
 import { PiInit } from '@/components/PiInit'
+import { PiDebugBar } from '@/components/PiDebug'
 import { PiBanner } from '@/components/PiBanner'
 import ThemeRegistry from '@/theme/ThemeRegistry';
 import dynamic from 'next/dynamic';
@@ -45,6 +46,7 @@ export default function RootLayout({
           <I18nProvider>
             {/* Initialize Pi SDK in client once available */}
             <PiInit />
+            <PiDebugBar />
             {/* If not in Pi Browser, show a small banner */}
             <PiBanner />
             <AppBar position="sticky" elevation={0} color="transparent" sx={{ backdropFilter: 'blur(10px)', borderBottom: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(0,0,0,0.4)' }}>

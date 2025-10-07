@@ -1,6 +1,6 @@
 // apps/web/src/lib/pi.ts
 declare global {
-  interface Window { Pi?: any }
+  interface Window { Pi?: any; __piReady?: boolean; __piInitError?: string }
 }
 
 export async function initPi() {
@@ -11,26 +11,20 @@ export async function initPi() {
 }
 
 export async function waitForPiSDK(opts?: { timeoutMs?: number; intervalMs?: number }) {
-  const timeoutMs = opts?.timeoutMs ?? 4000;
+  const timeoutMs = opts?.timeoutMs ?? 7000;
   const intervalMs = opts?.intervalMs ?? 100;
   const start = Date.now();
-  if (typeof window !== 'undefined' && (window as any).Pi?.authenticate) return (window as any).Pi;
+  if (typeof window !== 'undefined' && window.Pi?.authenticate && window.__piReady) return window.Pi;
   return await new Promise<any>((resolve, reject) => {
     const id = setInterval(() => {
-      if (typeof window !== 'undefined' && (window as any).Pi?.authenticate) {
+      if (typeof window !== 'undefined' && window.Pi?.authenticate && window.__piReady) {
         clearInterval(id);
-        resolve((window as any).Pi);
+        resolve(window.Pi);
       } else if (Date.now() - start > timeoutMs) {
         clearInterval(id);
-        reject(new Error('Pi SDK not available. Are you in Pi Browser and is the domain whitelisted?'));
+        reject(new Error(window.__piInitError || 'Pi SDK not ready (check domain whitelist & use Pi Browser)'));
       }
     }, intervalMs);
-    document.addEventListener('visibilitychange', () => {
-      if (typeof window !== 'undefined' && (window as any).Pi?.authenticate) {
-        clearInterval(id);
-        resolve((window as any).Pi);
-      }
-    }, { once: true });
   });
 }
 
@@ -40,12 +34,13 @@ export function isPiBrowser(): boolean {
 }
 
 export async function signInWithPi(): Promise<{ accessToken: string; uid: string; username?: string } | string> {
-  // Fallback for local browser outside Pi Browser:
-  if (typeof window === 'undefined' || !(window as any).Pi) {
+  if (typeof window === 'undefined') return 'dev pi_dev_address:1';
+  try {
+    await waitForPiSDK({ timeoutMs: 7000 });
+  } catch {
     return 'dev pi_dev_address:1';
   }
-
-  const Pi = (window as any).Pi;
+  const Pi = window.Pi;
   try {
     // Request payments + username scopes (adjust if you need more)
     const authRes = await Pi.authenticate(
