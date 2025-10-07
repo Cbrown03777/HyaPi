@@ -24,11 +24,10 @@ import EqualizerIcon from '@mui/icons-material/Equalizer';
 async function getBearer(): Promise<string> {
   try {
     const { signInWithPi } = await import('@/lib/pi');
-    const token = await signInWithPi();
-    if (typeof token === 'string') return token;
-    if (token && typeof token === 'object' && 'accessToken' in token) return (token as any).accessToken as string;
-  } catch {}
-  return 'dev pi_dev_address:1';
+    return await signInWithPi();
+  } catch {
+    return 'dev pi_dev_address:1';
+  }
 }
 
 type AllocRow = { key: string; weight: number };

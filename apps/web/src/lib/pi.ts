@@ -85,6 +85,13 @@ export async function piLogin(rawScopes?: unknown): Promise<{ uid: string; acces
   }
 }
 
+// Compat shim for legacy callers expecting a bearer token string
+export async function signInWithPi(): Promise<string> {
+  const { accessToken } = await piLogin();
+  if (!accessToken) throw new Error('Missing access token from Pi authenticate');
+  return accessToken;
+}
+
 export async function startDeposit(amountPi: number, token: string, memo = 'HyaPi stake deposit', metadata: any = {}) {
   const Pi = (globalThis as any).Pi;
   if (!Pi) throw new Error('Pi SDK not present');
