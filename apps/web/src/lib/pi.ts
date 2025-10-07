@@ -30,6 +30,24 @@ export function isPiBrowser(): boolean {
   try { return /PiBrowser/i.test(navigator.userAgent || ''); } catch { return false; }
 }
 
+// ---- Scope normalization ----
+const ALLOWED_SCOPES = ['username', 'payments', 'wallet'] as const;
+type AllowedScope = (typeof ALLOWED_SCOPES)[number];
+
+export function normalizeScopes(input?: unknown, fallback: AllowedScope[] = ['username','payments']): AllowedScope[] {
+  if (Array.isArray(input)) {
+    const cleaned = input
+      .map(s => (typeof s === 'string' ? s.trim() : ''))
+      .filter(Boolean) as string[];
+    return cleaned.filter(s => (ALLOWED_SCOPES as readonly string[]).includes(s)) as AllowedScope[];
+  }
+  if (typeof input === 'string') {
+    const parts = input.split(/[\,\s]+/g).map(s => s.trim()).filter(Boolean);
+    return parts.filter(s => (ALLOWED_SCOPES as readonly string[]).includes(s)) as AllowedScope[];
+  }
+  return fallback;
+}
+
 export async function signInWithPi(): Promise<{ accessToken: string; uid: string; username?: string } | string> {
   if (typeof window === 'undefined') return 'dev pi_dev_address:1';
   try { await waitForPiSDK({ timeoutMs: 7000 }); } catch { return 'dev pi_dev_address:1'; }
@@ -49,14 +67,16 @@ export async function signInWithPi(): Promise<{ accessToken: string; uid: string
 }
 
 // New robust login helper (source of truth going forward)
-export async function piLogin(): Promise<{ uid: string; accessToken: string; username?: string }> {
+export async function piLogin(rawScopes?: unknown): Promise<{ uid: string; accessToken: string; username?: string }> {
   const Pi = await waitForPiSDK();
   console.debug('[piLogin] Pi present:', !!Pi, 'has authenticate:', !!Pi?.authenticate);
+  const scopes = normalizeScopes(rawScopes, ['username','payments']);
+  if (!Array.isArray(scopes) || scopes.length === 0) throw new Error('No valid Pi scopes selected');
+  console.debug('[piLogin] using scopes:', scopes);
+  const onIncompletePaymentFound = (payment: any) => {
+    console.debug('[piLogin] incomplete payment found', payment?.identifier || payment?.id || '');
+  };
   try {
-    const scopes = ['username','payments'];
-    const onIncompletePaymentFound = (payment: any) => {
-      console.debug('[piLogin] incomplete payment found', payment?.identifier || payment?.id || '');
-    };
     const authResult = await Pi.authenticate({ scopes }, onIncompletePaymentFound);
     console.debug('[piLogin] auth result keys:', Object.keys(authResult || {}));
     const uid = authResult?.user?.uid || authResult?.user?.username || '';
