@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { GOV_API_BASE } from '@hyapi/shared';
 import axios from 'axios';
-import { signInWithPi, startDeposit } from '@/lib/pi';
+import { signInWithPi, startDeposit, waitForPiSDK, isPiBrowser } from '@/lib/pi';
 import { useToast } from '@/components/ToastProvider';
 import { useActivity } from '@/components/ActivityProvider';
 import { ActivityPanel } from '@/components/ActivityPanel';
@@ -57,6 +57,7 @@ export default function StakePage() {
   const [piUser, setPiUser] = useState<PiUser | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [piInitState, setPiInitState] = useState<'idle'|'waiting'|'ready'|'failed'>('idle');
   // Metrics KPI (7-day EMA APY)
   const [apy7d, setApy7d] = useState<number | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
@@ -75,13 +76,20 @@ export default function StakePage() {
   // Load auth, balances, APYs, curve
   useEffect(() => {
     (async () => {
-      // Attempt silent auth (Pi Browser will pop if needed). If not in Pi Browser, remain logged out.
-      const maybe = await signInWithPi();
-      if (typeof maybe === 'object' && 'accessToken' in maybe) {
-        const t = maybe.accessToken;
-        setToken(t);
-  setPiUser({ uid: maybe.uid, username: maybe.username } as PiUser);
-        (globalThis as any).hyapiBearer = t;
+      setPiInitState('waiting');
+      try {
+        await waitForPiSDK({ timeoutMs: 6000 });
+        setPiInitState('ready');
+        // Optional silent auth attempt
+        const maybe = await signInWithPi();
+        if (typeof maybe === 'object' && 'accessToken' in maybe) {
+          const t = maybe.accessToken;
+          setToken(t);
+          setPiUser({ uid: maybe.uid, username: maybe.username } as PiUser);
+          (globalThis as any).hyapiBearer = t;
+        }
+      } catch {
+        setPiInitState('failed');
       }
       // Fetch balance (optional)
       try {
@@ -211,14 +219,17 @@ export default function StakePage() {
   async function handleLogin() {
     setAuthError(null); setAuthLoading(true);
     try {
+      await waitForPiSDK({ timeoutMs: 6000 });
       const res = await signInWithPi();
       if (typeof res === 'object' && 'accessToken' in res) {
-  setToken(res.accessToken); setPiUser({ uid: res.uid, username: res.username } as PiUser); (globalThis as any).hyapiBearer = res.accessToken;
+        setToken(res.accessToken); setPiUser({ uid: res.uid, username: res.username } as PiUser); (globalThis as any).hyapiBearer = res.accessToken;
       } else {
-        throw new Error('Pi Browser not detected');
+        throw new Error('Pi SDK unavailable');
       }
     } catch (e:any) {
-      setAuthError(e?.message || 'Login failed');
+      const msg = e?.message || 'Login failed';
+      const hint = /whitelist|available|domain/i.test(msg) ? ' This domain must be whitelisted in the Pi Developer Portal.' : ' Open this page inside Pi Browser.';
+      setAuthError(msg + hint);
     } finally { setAuthLoading(false); }
   }
 
@@ -275,8 +286,13 @@ export default function StakePage() {
           <CardHeader title="Connect your Pi Wallet" subheader="Log in to stake Pi and start earning yield." />
           <CardContent>
             <Stack spacing={2}>
-              <Button variant="contained" onClick={handleLogin} disabled={authLoading}>{authLoading? 'Connecting…':'Log in with Pi'}</Button>
+              {piInitState === 'waiting' && <Typography variant="caption" sx={{ opacity:0.7 }}>Initializing Pi…</Typography>}
+              {piInitState === 'failed' && (
+                <Typography variant="caption" color="warning.main">Pi SDK not detected. Open in Pi Browser and ensure the exact domain is whitelisted.</Typography>
+              )}
+              <Button variant="contained" onClick={handleLogin} disabled={authLoading || piInitState==='waiting'}>{authLoading? 'Connecting…':'Log in with Pi'}</Button>
               {authError && <Typography variant="caption" color="error">{authError}</Typography>}
+              <Typography variant="caption" sx={{ opacity:0.6 }}>Detected Pi Browser: {isPiBrowser() ? 'yes':'no'}</Typography>
               <Typography variant="caption" sx={{ opacity:0.6 }}>Use the Pi Browser to authenticate and initiate payments.</Typography>
             </Stack>
           </CardContent>

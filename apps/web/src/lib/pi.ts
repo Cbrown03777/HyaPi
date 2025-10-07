@@ -10,6 +10,35 @@ export async function initPi() {
   return Pi;
 }
 
+export async function waitForPiSDK(opts?: { timeoutMs?: number; intervalMs?: number }) {
+  const timeoutMs = opts?.timeoutMs ?? 4000;
+  const intervalMs = opts?.intervalMs ?? 100;
+  const start = Date.now();
+  if (typeof window !== 'undefined' && (window as any).Pi?.authenticate) return (window as any).Pi;
+  return await new Promise<any>((resolve, reject) => {
+    const id = setInterval(() => {
+      if (typeof window !== 'undefined' && (window as any).Pi?.authenticate) {
+        clearInterval(id);
+        resolve((window as any).Pi);
+      } else if (Date.now() - start > timeoutMs) {
+        clearInterval(id);
+        reject(new Error('Pi SDK not available. Are you in Pi Browser and is the domain whitelisted?'));
+      }
+    }, intervalMs);
+    document.addEventListener('visibilitychange', () => {
+      if (typeof window !== 'undefined' && (window as any).Pi?.authenticate) {
+        clearInterval(id);
+        resolve((window as any).Pi);
+      }
+    }, { once: true });
+  });
+}
+
+export function isPiBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /PiBrowser/i.test(navigator.userAgent || '');
+}
+
 export async function signInWithPi(): Promise<{ accessToken: string; uid: string; username?: string } | string> {
   // Fallback for local browser outside Pi Browser:
   if (typeof window === 'undefined' || !(window as any).Pi) {
