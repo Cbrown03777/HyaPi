@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { GOV_API_BASE } from '@hyapi/shared';
 import axios from 'axios';
-import { signInWithPi } from '@/lib/pi';
+import { signInWithPi, startDeposit } from '@/lib/pi';
 import { useToast } from '@/components/ToastProvider';
 import { useActivity } from '@/components/ActivityProvider';
 import { ActivityPanel } from '@/components/ActivityPanel';
@@ -41,7 +41,8 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 export default function StakePage() {
   // State
   const [token, setToken] = useState('');
-  const [amt, setAmt] = useState(100);
+  // User-entered stake amount (string to allow empty state)
+  const [amount, setAmount] = useState<string>('');
   const [weeks, setWeeks] = useState(0);
   const [baseNetApy, setBaseNetApy] = useState(0); // decimal
   const [baseGrossApy, setBaseGrossApy] = useState(0);
@@ -51,7 +52,11 @@ export default function StakePage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [balance, setBalance] = useState<number>(1000);
+  const [balance, setBalance] = useState<number>(0);
+  interface PiUser { uid: string; username?: string }
+  const [piUser, setPiUser] = useState<PiUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   // Metrics KPI (7-day EMA APY)
   const [apy7d, setApy7d] = useState<number | null>(null);
   const [metricsLoading, setMetricsLoading] = useState(true);
@@ -70,33 +75,35 @@ export default function StakePage() {
   // Load auth, balances, APYs, curve
   useEffect(() => {
     (async () => {
+      // Attempt silent auth (Pi Browser will pop if needed). If not in Pi Browser, remain logged out.
       const maybe = await signInWithPi();
-      const t = typeof maybe === 'string' ? maybe : (maybe as any)?.accessToken ?? '';
-      setToken(t);
-      if (t) (globalThis as any).hyapiBearer = t;
+      if (typeof maybe === 'object' && 'accessToken' in maybe) {
+        const t = maybe.accessToken;
+        setToken(t);
+  setPiUser({ uid: maybe.uid, username: maybe.username } as PiUser);
+        (globalThis as any).hyapiBearer = t;
+      }
       // Fetch balance (optional)
       try {
-        const res1 = await fetch(`${GOV_API_BASE}/v1/wallet/balance`, { headers: { Authorization: `Bearer ${t}` } });
+        if (token) {
+          const res1 = await fetch(`${GOV_API_BASE}/v1/wallet/balance`, { headers: { Authorization: `Bearer ${token}` } });
         if (res1.ok) {
           const j1 = await res1.json();
           const raw = (j1?.data?.pi_balance ?? j1?.data?.balance ?? j1?.pi_balance ?? j1?.balance);
           const v = typeof raw === 'string' ? Number(raw) : typeof raw === 'number' ? raw : NaN;
           if (Number.isFinite(v) && v >= 0) setBalance(v);
-        } else if (res1.status === 404 && t.startsWith('dev ')) {
-          setBalance(1_000_000);
+        }
         }
       } catch { /* silent */ }
       // Fetch allocation summary + lock curve
       try {
-        const client = axios.create({ baseURL: GOV_API_BASE, headers: { Authorization: `Bearer ${t}` } });
+  if (!token) return;
+  const client = axios.create({ baseURL: GOV_API_BASE, headers: { Authorization: `Bearer ${token}` } });
         const [sumRes] = await Promise.allSettled([
           client.get('/v1/alloc/summary')
         ]);
         // Fetch EMA separately so we can display same net APY as home
-        try {
-          const emaRes = await client.get('/v1/alloc/ema');
-          if (emaRes?.data?.success) setEmaNetApy(emaRes.data.data?.ema7 ?? emaRes.data.data?.latest ?? null);
-        } catch {}
+        try { const emaRes = await client.get('/v1/alloc/ema'); if (emaRes?.data?.success) setEmaNetApy(emaRes.data.data?.ema7 ?? emaRes.data.data?.latest ?? null); } catch {}
         if (sumRes.status === 'fulfilled' && sumRes.value.data?.success) {
           setBaseNetApy(sumRes.value.data.data?.totalNetApy || 0);
           setBaseGrossApy(sumRes.value.data.data?.totalGrossApy || 0);
@@ -106,7 +113,7 @@ export default function StakePage() {
       // Fetch portfolio metrics for 7-day EMA APY (Home parity)
       try {
         setMetricsLoading(true);
-        const m = await fetchPortfolioMetrics();
+  const m = await fetchPortfolioMetrics();
         setApy7d(m.apy7d ?? null);
       } catch (e:any) {
         setMetricsErr(e?.message || 'Failed to load');
@@ -114,7 +121,7 @@ export default function StakePage() {
         setMetricsLoading(false);
       }
     })();
-  }, []);
+  }, [token]);
 
   // lock share curve from server (piecewise step) with fallback defaults if absent yet
   const baseDisplayed = showGross ? baseGrossApy : baseNetApy;
@@ -129,11 +136,11 @@ export default function StakePage() {
     setMsg(null);
     setBusy(true);
     const opId = crypto.randomUUID();
-    activity.log({ id: opId, kind: 'stake', title: `Staking ${fmtCompact(amt)} Pi`, detail: `lock ${weeks}w`, status: 'in-flight' });
+  activity.log({ id: opId, kind: 'stake', title: `Staking ${fmtCompact(numericAmt)} Pi`, detail: `lock ${weeks}w`, status: 'in-flight' });
     try {
       const Pi = (globalThis as any).Pi;
       if (Pi && token && !token.startsWith('dev ')) {
-        const paymentData = { amount: amt, memo: 'HyaPi stake deposit', metadata: { lockupWeeks: weeks } };
+  const paymentData = { amount: numericAmt, memo: 'HyaPi stake deposit', metadata: { lockupWeeks: weeks } };
         const callbacks = {
           onReadyForServerApproval: async (paymentId: string) => {
             await fetch(`${GOV_API_BASE}/v1/pi/approve/${paymentId}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
@@ -152,7 +159,7 @@ export default function StakePage() {
         const m = `Payment submitted. You'll see your stake after completion.`;
         setMsg(m);
         toast.success(m);
-        activity.log({ id: opId, kind: 'stake', title: `Payment started ${fmtCompact(amt)} Pi`, detail: `lock ${weeks}w`, status: 'success' });
+  activity.log({ id: opId, kind: 'stake', title: `Payment started ${fmtCompact(numericAmt)} Pi`, detail: `lock ${weeks}w`, status: 'success' });
       } else {
         const res = await fetch(`${GOV_API_BASE}/v1/stake/deposit`, {
           method: 'POST',
@@ -161,15 +168,15 @@ export default function StakePage() {
             'Idempotency-Key': crypto.randomUUID(),
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ amountPi: amt, lockupWeeks: weeks }),
+          body: JSON.stringify({ amountPi: numericAmt, lockupWeeks: weeks }),
         });
         if (res.status >= 500) toast.error('Network error. Please try again.');
         const j = await res.json();
         if (!res.ok || j?.success === false) throw new Error(j?.error?.message || 'Stake failed');
-        const m = `Staked ${fmtCompact(amt)} Pi (lock ${weeks}w). Stake id: ${j.data?.stake?.id}`;
+  const m = `Staked ${fmtCompact(numericAmt)} Pi (lock ${weeks}w). Stake id: ${j.data?.stake?.id}`;
         setMsg(m);
         toast.success(m);
-        activity.log({ id: opId, kind: 'stake', title: `Staked ${fmtCompact(amt)} Pi`, detail: `lock ${weeks}w`, status: 'success' });
+  activity.log({ id: opId, kind: 'stake', title: `Staked ${fmtCompact(numericAmt)} Pi`, detail: `lock ${weeks}w`, status: 'success' });
       }
     } catch (e: any) {
       const m = e.message ? `Error: ${e.message}` : 'Stake failed';
@@ -184,11 +191,11 @@ export default function StakePage() {
   // simple client-side estimate: linear APY pro-rated by weeks; hyaPi minted 1:1 + yield
   // For now protocol APY equals platform net APY (no per-user scaling in current model)
   const apy = platformNetApy; // decimal
-  const estFinal = amt * (1 + apy * (weeks / 52));
-  const isDev = token.startsWith('dev ');
-  const invalidReason = !Number.isFinite(amt) || amt <= 0
+  const numericAmt = Number(amount || '0');
+  const estFinal = numericAmt * (1 + apy * (weeks / 52));
+  const invalidReason = !Number.isFinite(numericAmt) || numericAmt <= 0
     ? 'Enter an amount greater than 0'
-    : (!isDev && amt > balance)
+    : (balance > 0 && numericAmt > balance)
       ? 'Amount exceeds available balance'
       : '';
 
@@ -201,11 +208,46 @@ export default function StakePage() {
 
   const quickPercents = [25, 50, 75, 100];
 
+  async function handleLogin() {
+    setAuthError(null); setAuthLoading(true);
+    try {
+      const res = await signInWithPi();
+      if (typeof res === 'object' && 'accessToken' in res) {
+  setToken(res.accessToken); setPiUser({ uid: res.uid, username: res.username } as PiUser); (globalThis as any).hyapiBearer = res.accessToken;
+      } else {
+        throw new Error('Pi Browser not detected');
+      }
+    } catch (e:any) {
+      setAuthError(e?.message || 'Login failed');
+    } finally { setAuthLoading(false); }
+  }
+
+  async function submitStake() {
+    if (!piUser || !token || invalidReason) return;
+    setBusy(true); setMsg(null);
+    const opId = crypto.randomUUID();
+    activity.log({ id: opId, kind: 'stake', title: `Staking ${fmtCompact(numericAmt)} Pi`, detail: `lock ${weeks}w`, status: 'in-flight' });
+    try {
+      await startDeposit(numericAmt, token, 'HyaPi stake deposit', { lockupWeeks: weeks });
+      const m = `Payment submitted. You'll see your stake after completion.`;
+      setMsg(m);
+      toast.success(m);
+      activity.log({ id: opId, kind: 'stake', title: `Payment started ${fmtCompact(numericAmt)} Pi`, detail: `lock ${weeks}w`, status: 'success' });
+    } catch (e:any) {
+      const m = e?.message ? `Error: ${e.message}` : 'Stake failed';
+      setMsg(m); toast.error(m);
+      activity.log({ id: opId, kind: 'stake', title: 'Stake failed', detail: e?.message, status: 'error' });
+    } finally { setBusy(false); }
+  }
+
   return (
     <Box maxWidth="lg" mx="auto" px={{ xs: 2, sm: 4 }} py={4}>
       <Typography variant="h5" fontWeight={600} gutterBottom>
         Stake Pi → receive hyaPi (1:1)
       </Typography>
+      {piUser && (
+        <Typography variant="caption" sx={{ display:'block', mb:2, color:'text.secondary' }}>Signed in: UID {piUser.uid}{piUser.username? ` (@${piUser.username})`:''}</Typography>
+      )}
 
       {/* 7-day EMA APY KPI */}
       <Box mb={3}>
@@ -228,24 +270,38 @@ export default function StakePage() {
         </Card>
       </Box>
 
+      {!piUser && (
+        <Card sx={{ maxWidth:420, mb:4 }} variant="outlined">
+          <CardHeader title="Connect your Pi Wallet" subheader="Log in to stake Pi and start earning yield." />
+          <CardContent>
+            <Stack spacing={2}>
+              <Button variant="contained" onClick={handleLogin} disabled={authLoading}>{authLoading? 'Connecting…':'Log in with Pi'}</Button>
+              {authError && <Typography variant="caption" color="error">{authError}</Typography>}
+              <Typography variant="caption" sx={{ opacity:0.6 }}>Use the Pi Browser to authenticate and initiate payments.</Typography>
+            </Stack>
+          </CardContent>
+        </Card>
+      )}
+
+      {piUser && (
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} mt={1} alignItems="stretch">
         {/* Amount Card */}
         <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <CardHeader title="Amount to stake" subheader={`Available: ${fmtNumber(balance, 2)} Pi${isDev ? ' (dev)' : ''}`} />
+          <CardHeader title="Amount to stake" subheader={`Available: ${fmtNumber(balance, 2)} Pi`} />
           <CardContent>
             <Stack spacing={2}>
               <TextField
                 label="Amount (Pi)"
                 type="number"
-                value={amt}
-                onChange={(e) => setAmt(Number(e.target.value))}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
                 inputProps={{ min: 0, step: 0.000001 }}
                 fullWidth
               />
               <Slider
                 aria-label="Amount slider"
-                value={amt > balance ? balance : amt}
-                onChange={(_, v) => typeof v === 'number' && setAmt(Number(v.toFixed(6)))}
+                value={numericAmt > balance ? balance : numericAmt}
+                onChange={(_, v) => typeof v === 'number' && setAmount(String(Number(v.toFixed(6))))}
                 min={0}
                 max={balance || 1}
                 step={balance / 200 || 0.5}
@@ -258,7 +314,7 @@ export default function StakePage() {
                 sx={{ flexWrap: 'wrap' }}
               >
                 {quickPercents.map(p => (
-                  <ToggleButton key={p} value={p} aria-label={`${p}%`} onClick={() => setAmt(Number((balance * (p / 100)).toFixed(6)))}>
+                  <ToggleButton key={p} value={p} aria-label={`${p}%`} onClick={() => setAmount(Number((balance * (p / 100)).toFixed(6)).toString())}>
                     {p}%
                   </ToggleButton>
                 ))}
@@ -336,6 +392,7 @@ export default function StakePage() {
           </CardContent>
         </Card>
       </Stack>
+      )}
 
       {msg && (
         <Alert severity={msg.startsWith('Error') ? 'error' : 'success'} sx={{ mt: 2 }} variant="outlined">{msg}</Alert>
@@ -346,6 +403,7 @@ export default function StakePage() {
       </Box>
 
       {/* Sticky actions for mobile */}
+      {piUser && (
       <Paper
         elevation={3}
         sx={{
@@ -367,8 +425,8 @@ export default function StakePage() {
           <Button
             variant="contained"
             fullWidth
-            disabled={busy || !token || !!invalidReason}
-            onClick={submit}
+            disabled={busy || !piUser || !!invalidReason}
+            onClick={submitStake}
           >
             {busy ? 'Submitting…' : 'Stake'}
           </Button>
@@ -381,14 +439,15 @@ export default function StakePage() {
           </Button>
         </Stack>
       </Paper>
-      <Box height={64} display={{ xs: 'block', sm: 'none' }} />
+      )}
+      {piUser && <Box height={64} display={{ xs: 'block', sm: 'none' }} />}
 
       {/* Preview Dialog */}
-      <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={previewOpen && !!piUser} onClose={() => setPreviewOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Stake summary</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1} fontSize={14}>
-            <Stack direction="row" justifyContent="space-between"><span>Amount</span><span>{fmtNumber(amt)} Pi</span></Stack>
+            <Stack direction="row" justifyContent="space-between"><span>Amount</span><span>{fmtNumber(numericAmt)} Pi</span></Stack>
             <Stack direction="row" justifyContent="space-between"><span>Lockup</span><span>{weeks} weeks</span></Stack>
             <Stack direction="row" justifyContent="space-between"><span>Protocol {showGross ? 'Gross' : 'Net'} APY</span><span>{baseDisplayed ? (baseDisplayed * 100).toFixed(2) + '%' : '—'}</span></Stack>
             <Stack direction="row" justifyContent="space-between"><span>Effective APY</span><span>{(apy * 100).toFixed(2)}%</span></Stack>
@@ -407,7 +466,7 @@ export default function StakePage() {
         </DialogContent>
         <DialogActions>
           <Button variant="outlined" onClick={() => setPreviewOpen(false)}>Close</Button>
-          <Button variant="contained" onClick={() => { setPreviewOpen(false); submit(); }} disabled={busy || !!invalidReason}>Confirm & Stake</Button>
+          <Button variant="contained" onClick={() => { setPreviewOpen(false); submitStake(); }} disabled={busy || !!invalidReason}>Confirm & Stake</Button>
         </DialogActions>
       </Dialog>
     </Box>
