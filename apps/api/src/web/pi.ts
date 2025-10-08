@@ -14,17 +14,29 @@ piRouter.post('/approve/:paymentId', async (req, res) => {
     const user = (req as any).user;
     if (!user?.userId) return res.status(401).json({ success: false, error: { code: 'UNAUTH', message: 'no user' } });
 
-    await withTx(async (tx) => {
-      await tx.query(
-        `INSERT INTO pi_payments(pi_payment_id, direction, uid, amount_pi, status)
-         VALUES ($1,'U2A',COALESCE($2::text,'unknown'),0,'created')
-         ON CONFLICT (pi_payment_id) DO NOTHING`,
-        [paymentId, user.uid ?? null]
-      );
-    });
+    // Approve upstream
+    const piResp = await platformApprove(paymentId);
+    // Fetch full payment to capture amount / metadata if not present
+    let paymentData: any = piResp.data;
+    try { const full = await platformGetPayment(paymentId); paymentData = full.data || paymentData; } catch {}
+    const amount = Number(paymentData?.amount ?? 0);
+    const memo = paymentData?.memo ?? null;
+    const lockupWeeks = Number(paymentData?.metadata?.lockupWeeks ?? 0) || null;
+    const statusText = paymentData?.status?.developer_approved ? 'approved' : 'created';
 
-    await platformApprove(paymentId);
-    await db.query(`UPDATE pi_payments SET status='approved', updated_at=now() WHERE pi_payment_id=$1`, [paymentId]);
+    await db.query(
+      `INSERT INTO pi_payments (pi_payment_id, direction, uid, amount_pi, status, payload, status_text, memo, lockup_weeks)
+       VALUES ($1,'U2A',COALESCE($2::text,'unknown'),$3,$4,$5::jsonb,$6,$7,$8)
+       ON CONFLICT (pi_payment_id) DO UPDATE
+         SET payload=EXCLUDED.payload,
+             status_text=EXCLUDED.status_text,
+             memo=EXCLUDED.memo,
+             lockup_weeks=EXCLUDED.lockup_weeks,
+             amount_pi = CASE WHEN pi_payments.amount_pi=0 AND EXCLUDED.amount_pi>0 THEN EXCLUDED.amount_pi ELSE pi_payments.amount_pi END,
+             updated_at=now()`,
+      [paymentId, user.uid ?? null, Number.isFinite(amount) ? amount : 0, statusText === 'approved' ? 'approved' : 'created', JSON.stringify(paymentData || {}), statusText, memo, lockupWeeks]
+    );
+
     res.json({ success: true });
   } catch (e: any) {
     res.status(400).json({ success: false, error: { code: 'APPROVE_FAIL', message: e.message } });
@@ -47,43 +59,55 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
     const { txid } = req.body as { txid: string };
     const user = (req as any).user;
 
-    await platformComplete(paymentId, txid);
-    // Fetch payment to get amount and metadata
-    let amount = 0;
-    let lockupWeeks = 0;
-    try {
-      const pr = await platformGetPayment(paymentId);
-      amount = Number(pr.data?.amount ?? 0);
-      lockupWeeks = Number(pr.data?.metadata?.lockupWeeks ?? 0);
-    } catch {}
+    const piResp = await platformComplete(paymentId, txid);
+    let paymentData: any = piResp.data;
+    try { const full = await platformGetPayment(paymentId); paymentData = full.data || paymentData; } catch {}
+    const amount = Number(paymentData?.amount ?? 0);
+    const memo = paymentData?.memo ?? null;
+    const lockupWeeks = Number(paymentData?.metadata?.lockupWeeks ?? 0) || 0;
 
     await withTx(async (tx) => {
       await tx.query(
-        `UPDATE pi_payments SET status='completed', txid=$2, amount_pi = COALESCE($3, amount_pi), updated_at=now() WHERE pi_payment_id=$1`,
-        [paymentId, txid, Number.isFinite(amount) ? amount : null]
+        `UPDATE pi_payments
+           SET status='completed',
+               status_text='completed',
+               txid=$2,
+               amount_pi = CASE WHEN amount_pi=0 AND $3 IS NOT NULL THEN $3 ELSE amount_pi END,
+               payload=$4::jsonb,
+               memo=$5,
+               lockup_weeks=$6,
+               updated_at=now()
+         WHERE pi_payment_id=$1`,
+        [paymentId, txid, Number.isFinite(amount) ? amount : null, JSON.stringify(paymentData || {}), memo, lockupWeeks || null]
       );
 
-      // Minimal stake crediting (MVP): create stake and credit balance
+      // Credit stake + balance if not already (simple guard: check existing stake for this payment via tx_ref?)
       if (user?.userId && amount > 0) {
-        // compute apy and init fee consistent with staking route
-        const apyRow = await tx.query<{ apy_bps: number }>(
-          `SELECT apy_bps FROM v_apy_for_lock WHERE lockup_weeks=$1 LIMIT 1`,
-          [lockupWeeks]
-        );
+        const apyRow = await tx.query<{ apy_bps: number }>(`SELECT apy_bps FROM v_apy_for_lock WHERE lockup_weeks=$1 LIMIT 1`, [lockupWeeks]);
         const apy_bps = apyRow.rows[0]?.apy_bps ?? 500;
         const init_fee_bps = lockupWeeks === 0 ? 50 : 0;
         await tx.query(
           `INSERT INTO stakes (user_id, amount_pi, lockup_weeks, apy_bps, init_fee_bps)
-           VALUES ($1,$2,$3,$4,$5)`,
+             VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT DO NOTHING`,
           [user.userId, amount, lockupWeeks, apy_bps, init_fee_bps]
         );
         await tx.query(
           `INSERT INTO balances (user_id, hyapi_amount)
-           VALUES ($1,$2)
-           ON CONFLICT (user_id) DO UPDATE SET hyapi_amount = balances.hyapi_amount + EXCLUDED.hyapi_amount`,
+             VALUES ($1,$2)
+             ON CONFLICT (user_id) DO UPDATE SET hyapi_amount = balances.hyapi_amount + EXCLUDED.hyapi_amount`,
           [user.userId, amount]
         );
       }
+
+      // Record liquidity event (deposit) with new meta/amount columns if present
+      try {
+        await tx.query(
+          `INSERT INTO liquidity_events(kind, amount, meta, amount_usd, tx_ref)
+             VALUES ('deposit',$1,$2::jsonb,$3,$4)`,
+          [Number.isFinite(amount) ? amount : 0, JSON.stringify({ paymentId, txid, memo, lockupWeeks }), (Number.isFinite(amount) ? amount : 0) * Number(process.env.PI_USD_PRICE ?? '0.35'), `pi:${paymentId}`]
+        );
+      } catch {}
     });
 
     res.json({ success: true });

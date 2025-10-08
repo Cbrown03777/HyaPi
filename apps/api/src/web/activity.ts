@@ -35,7 +35,26 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
       [user.userId, N]
     );
 
+    // Recent completed Pi deposits (join user uid)
+    const { rows: deposits } = await db.query(
+      `SELECT p.pi_payment_id, p.created_at, p.amount_pi, p.memo, p.lockup_weeks
+         FROM pi_payments p
+         JOIN pi_identities i ON i.uid = p.uid
+        WHERE i.user_id=$1 AND p.status='completed'
+        ORDER BY p.updated_at DESC
+        LIMIT $2`,
+      [user.userId, N]
+    );
+
     const items = [
+      ...deposits.map((d: any) => ({
+        kind: 'deposit',
+        ts: d.created_at,
+        title: `Deposit ${d.amount_pi} Pi`,
+        detail: d.memo || (d.lockup_weeks ? `${d.lockup_weeks}w lock` : ''),
+        id: `pi:${d.pi_payment_id}`,
+        status: 'success',
+      })),
       ...stakes.map((s: any) => ({
         kind: 'stake',
         ts: s.created_at,
