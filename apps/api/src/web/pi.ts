@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { approvePayment as serverApprovePayment, completePayment as serverCompletePayment } from '../services/pi';
+import { approvePaymentAtPi as serverApprovePayment, completePaymentAtPi as serverCompletePayment } from '../services/pi';
 import { db, withTx } from '../services/db';
 import { platformApprove, platformComplete, platformCreateA2U, platformGetPayment } from '../services/piPlatform';
 import { createA2U } from '../services/piA2U';

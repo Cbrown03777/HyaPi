@@ -238,13 +238,29 @@ export default function StakePage() {
         const callbacks = {
           onReadyForServerApproval: async (paymentId: string) => {
             dbg('onReadyForServerApproval', { paymentId });
-            try { const r = await serverApprove(paymentId); dbg('serverApprove ok', r); }
-            catch(e:any){ const detail = e?.response?.data || e?.body || e?.message || String(e); dbg('serverApprove ERR', { paymentId, detail }); }
+            try {
+              const r = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/v1/pi/approve`, {
+                method: 'POST',
+                headers: { 'Content-Type':'application/json' },
+                body: JSON.stringify({ paymentId })
+              });
+              const j = await r.json().catch(()=>null);
+              dbg('server approve resp', { status: r.status, body: j });
+              if (!r.ok) throw new Error(`server approve failed: ${r.status}`);
+            } catch(e:any){ dbg('serverApprove ERR', { paymentId, msg: e?.message }); }
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
             dbg('onReadyForServerCompletion', { paymentId, txid });
-            try { const r = await serverComplete(paymentId, txid); dbg('serverComplete ok', r); }
-            catch(e:any){ const detail = e?.response?.data || e?.body || e?.message || String(e); dbg('serverComplete ERR', { paymentId, detail }); }
+            try {
+              const r = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/v1/pi/complete`, {
+                method: 'POST',
+                headers: { 'Content-Type':'application/json' },
+                body: JSON.stringify({ paymentId, txid })
+              });
+              const j = await r.json().catch(()=>null);
+              dbg('server complete resp', { status: r.status, body: j });
+              if (!r.ok) throw new Error(`server complete failed: ${r.status}`);
+            } catch(e:any){ dbg('serverComplete ERR', { paymentId, msg: e?.message }); }
           },
           onCancel: (paymentId: string) => dbg('onCancel', { paymentId }),
           onError: (error: any, paymentId: string) => dbg('onError', { paymentId, err: String(error) }),
