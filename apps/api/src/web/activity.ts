@@ -51,7 +51,7 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
         kind: 'deposit',
         ts: d.created_at,
         title: `Deposit ${d.amount_pi} Pi`,
-        detail: d.memo || (d.lockup_weeks ? `${d.lockup_weeks}w lock` : ''),
+        detail: d.memo || (d.lockup_weeks ? `${d.lockup_weeks}w lock` : d.pi_payment_id),
         id: `pi:${d.pi_payment_id}`,
         status: 'success',
       })),

@@ -45,6 +45,20 @@ export async function runDbHotfixes() {
         ALTER TABLE public.pi_payments ADD COLUMN lockup_weeks integer;
       END IF;
 
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='pi_payments' AND column_name='from_address'
+      ) THEN
+        ALTER TABLE public.pi_payments ADD COLUMN from_address text;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='pi_payments' AND column_name='to_address'
+      ) THEN
+        ALTER TABLE public.pi_payments ADD COLUMN to_address text;
+      END IF;
+
       -- Optional liquidity_events enrichment (amount Pi + meta jsonb) – backward compatible
       IF EXISTS (
         SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='liquidity_events'
