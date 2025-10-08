@@ -11,6 +11,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 
 import { proposalsRouter } from './web/proposals';
+import { piPublicDebugRouter } from './web/piPublicDebug';
 import { piRoutesPayments } from './web/piPayments';
 import { votesRouter } from './web/votes';
 import { finalizeRouter } from './web/finalize';
@@ -138,8 +139,9 @@ app.get('/v1/health/pi', async (_req, res) => {
 });
 // Public venues rates and public alloc history before auth
 app.use('/v1/venues', venuesRouter);
-// Public Pi payment approval/completion (called rapidly from client during SDK flow)
+// Public Pi payment approval/completion (called rapidly from client during SDK flow) & public debug endpoints
 app.use('/v1/pi', piRoutesPayments);
+app.use('/v1/pi', piPublicDebugRouter);
 app.use('/v1/alloc', allocGovPublicRouter);
 // Public governance config (boost terms)
 app.use('/v1/gov', govBoostPublicRouter);
