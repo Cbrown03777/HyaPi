@@ -37,22 +37,25 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
 
     // Recent completed Pi deposits (join user uid)
     const { rows: deposits } = await db.query(
-      `SELECT p.pi_payment_id, p.created_at, p.amount_pi, p.memo, p.lockup_weeks
-         FROM pi_payments p
-         JOIN pi_identities i ON i.uid = p.uid
-        WHERE i.user_id=$1 AND p.status='completed'
-        ORDER BY p.updated_at DESC
-        LIMIT $2`,
-      [user.userId, N]
+      `SELECT le.created_at, (le.meta->>'paymentId') AS payment_id,
+              COALESCE((le.meta->>'lockupWeeks')::int,0) AS lockup_weeks,
+              COALESCE((le.meta->>'memo'),'') AS memo,
+              le.amount
+         FROM liquidity_events le
+        WHERE le.kind='deposit'
+          AND (le.meta ? 'paymentId')
+        ORDER BY le.created_at DESC
+        LIMIT $1`,
+      [N]
     );
 
     const items = [
       ...deposits.map((d: any) => ({
         kind: 'deposit',
         ts: d.created_at,
-        title: `Deposit ${d.amount_pi} Pi`,
-        detail: d.memo || (d.lockup_weeks ? `${d.lockup_weeks}w lock` : d.pi_payment_id),
-        id: `pi:${d.pi_payment_id}`,
+        title: 'Deposit',
+        detail: d.memo ? d.memo : (d.lockup_weeks ? `${d.amount} PI (${d.lockup_weeks}w)` : `${d.amount} PI`),
+        id: `pi:${d.payment_id}`,
         status: 'success',
       })),
       ...stakes.map((s: any) => ({

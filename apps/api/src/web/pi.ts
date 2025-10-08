@@ -30,19 +30,19 @@ piRouter.post('/approve/:paymentId', async (req, res) => {
     // Optional full fetch for freshest metadata
     try { const full = await platformGetPayment(paymentId); if (full?.data) paymentData = full.data; } catch {}
 
-    const identifier = paymentData?.identifier || paymentData?.paymentId || paymentId;
-    const amount = Number(paymentData?.amount ?? 0) || 0;
+  const identifier = paymentData?.identifier || paymentData?.paymentId || paymentId;
+  const amount = Number(paymentData?.amount ?? 0) || 0;
     const memo = paymentData?.memo ?? null;
     const lockupWeeks = Number(paymentData?.metadata?.lockupWeeks ?? 0) || 0;
-    const dir = paymentData?.direction || 'user_to_app';
+  const dir = 'user_to_app'; // canonical for deposits (U->A)
     const from_address = paymentData?.from_address ?? paymentData?.fromAddress ?? null;
     const to_address = paymentData?.to_address ?? paymentData?.toAddress ?? null;
     const approvedJson = JSON.stringify(paymentData || {});
 
     await db.query(
       `INSERT INTO pi_payments (
-         pi_payment_id, direction, uid, amount_pi, status, payload, status_text, memo, lockup_weeks, from_address, to_address
-       ) VALUES ($1,$2,COALESCE($3::text,'unknown'),$4,$5,$6::jsonb,'approved',$7,$8,$9,$10)
+         pi_payment_id, direction, uid, amount_pi, status, status_text, payload, memo, lockup_weeks, from_address, to_address, updated_at
+       ) VALUES ($1,$2,COALESCE($3::text,'unknown'),$4,'approved','approved',$5::jsonb,$6,$7,$8,$9,now())
        ON CONFLICT (pi_payment_id) DO UPDATE SET
          amount_pi=CASE WHEN pi_payments.amount_pi=0 AND EXCLUDED.amount_pi>0 THEN EXCLUDED.amount_pi ELSE pi_payments.amount_pi END,
          memo=EXCLUDED.memo,
@@ -52,12 +52,12 @@ piRouter.post('/approve/:paymentId', async (req, res) => {
          payload=EXCLUDED.payload,
          from_address=COALESCE(EXCLUDED.from_address, pi_payments.from_address),
          to_address=COALESCE(EXCLUDED.to_address, pi_payments.to_address),
-         direction=COALESCE(EXCLUDED.direction, pi_payments.direction),
+         direction='user_to_app',
          updated_at=now()`,
-      [identifier, dir === 'user_to_app' ? 'U2A' : dir, user.uid ?? null, amount, 'approved', approvedJson, memo, lockupWeeks, from_address, to_address]
+      [identifier, dir, user.uid ?? null, amount, approvedJson, memo, lockupWeeks, from_address, to_address]
     );
 
-    res.json({ success: true, paymentId: identifier });
+    res.json({ success: true, paymentId: identifier, idempotent: true });
   } catch (e:any) {
     res.status(400).json({ success:false, error:{ code:'APPROVE_FAIL', message: e?.message || 'approve failed'} });
   }
@@ -86,7 +86,7 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
     const amount = Number(paymentData?.amount ?? 0) || 0;
     const memo = paymentData?.memo ?? null;
     const lockupWeeks = Number(paymentData?.metadata?.lockupWeeks ?? 0) || 0;
-    const dir = paymentData?.direction || 'user_to_app';
+  const dir = 'user_to_app';
     const from_address = paymentData?.from_address ?? paymentData?.fromAddress ?? null;
     const to_address = paymentData?.to_address ?? paymentData?.toAddress ?? null;
     const payloadJson = JSON.stringify(paymentData || {});
@@ -103,23 +103,24 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
            lockup_weeks=$6,
            from_address=COALESCE($7, from_address),
            to_address=COALESCE($8, to_address),
-           direction=COALESCE($9, direction),
+           direction='user_to_app',
            updated_at=now()
          WHERE pi_payment_id=$1`,
-        [identifier, txid, amount, payloadJson, memo, lockupWeeks, from_address, to_address, dir]
+        [identifier, txid, amount, payloadJson, memo, lockupWeeks, from_address, to_address]
       );
 
-      // Resolve user id by uid/pi identity
+      // Resolve user id by uid in payload if not provided in session
       let userId: number | null = user?.userId ?? null;
-      if (!userId && paymentData?.user_uid) {
-        const r = await tx.query<{ id: number }>(`SELECT id FROM users WHERE uid=$1 LIMIT 1`, [paymentData.user_uid]);
+      const payloadUid = paymentData?.user_uid || paymentData?.uid;
+      if (!userId && payloadUid) {
+        const r = await tx.query<{ id: number }>(`SELECT id FROM users WHERE uid=$1 LIMIT 1`, [payloadUid]);
         userId = r.rows[0]?.id ?? null;
       }
 
-      // Idempotent credit via liquidity_events tx_ref
       if (userId && amount > 0) {
-        const existing = await tx.query(`SELECT 1 FROM liquidity_events WHERE tx_ref=$1 LIMIT 1`, [`pi:${identifier}`]);
-        if (existing.rowCount === 0) {
+        const idemKey = `pi_complete:${identifier}`;
+        const exists = await tx.query(`SELECT 1 FROM liquidity_events WHERE idem_key=$1 LIMIT 1`, [idemKey]);
+        if (exists.rowCount === 0) {
           const apyRow = await tx.query<{ apy_bps: number }>(`SELECT apy_bps FROM v_apy_for_lock WHERE lockup_weeks=$1 LIMIT 1`, [lockupWeeks]);
           const apy_bps = apyRow.rows[0]?.apy_bps ?? 500;
           const init_fee_bps = lockupWeeks === 0 ? 50 : 0;
@@ -136,17 +137,17 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
           );
           try {
             await tx.query(
-              `INSERT INTO liquidity_events(kind, amount, meta, amount_usd, tx_ref)
-               VALUES ('deposit',$1,$2::jsonb,$3,$4)`,
-              [amount, JSON.stringify({ paymentId: identifier, txid, memo, lockupWeeks }), amount * Number(process.env.PI_USD_PRICE ?? '0.35'), `pi:${identifier}`]
+              `INSERT INTO liquidity_events(kind, amount, meta, amount_usd, idem_key, tx_ref)
+               VALUES ('deposit',$1,$2::jsonb,$3,$4,$5)`,
+              [amount, JSON.stringify({ paymentId: identifier, txid, memo, lockupWeeks }), amount * Number(process.env.PI_USD_PRICE ?? '0.35'), idemKey, `pi:${identifier}`]
             );
           } catch {}
-          console.log('[deposit/credited]', { paymentId: identifier, userId, principal: amount });
+          console.log('[pi/complete][deposit/credited]', { paymentId: identifier, userId, principal: amount });
         }
       }
     });
 
-    res.json({ success: true, paymentId: identifier });
+    res.json({ success: true, paymentId: identifier, idempotent: true });
   } catch (e:any) {
     res.status(400).json({ success:false, error:{ code:'COMPLETE_FAIL', message: e?.message || 'complete failed'} });
   }
