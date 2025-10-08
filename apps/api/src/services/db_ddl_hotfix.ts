@@ -59,6 +59,23 @@ export async function runDbHotfixes() {
         ALTER TABLE public.pi_payments ADD COLUMN to_address text;
       END IF;
 
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='pi_payments' AND column_name='direction'
+      ) THEN
+        ALTER TABLE public.pi_payments ADD COLUMN direction text;
+      END IF;
+
+      -- Backfill null direction to default 'user_to_app'
+      UPDATE public.pi_payments SET direction='user_to_app' WHERE direction IS NULL;
+      BEGIN
+        ALTER TABLE public.pi_payments ALTER COLUMN direction SET DEFAULT 'user_to_app';
+        ALTER TABLE public.pi_payments ALTER COLUMN direction SET NOT NULL;
+      EXCEPTION WHEN others THEN
+        -- ignore if constraint application fails (older rows) – non fatal
+        NULL;
+      END;
+
       -- Optional liquidity_events enrichment (amount Pi + meta jsonb) – backward compatible
       IF EXISTS (
         SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='liquidity_events'

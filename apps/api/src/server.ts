@@ -39,6 +39,7 @@ import { runMigrations } from './services/migrate';
 import { startPiPayoutWorker } from './services/piPayoutWorker';
 import { recordAllocationSnapshot } from './services/alloc';
 import { runDbHotfixes } from './services/db_ddl_hotfix';
+import { backfillPiPaymentMetadata } from './services/piBackfill';
 
 // Load local env only if not production (do not override Render env in prod)
 const isProd = process.env.NODE_ENV === 'production';
@@ -211,6 +212,7 @@ const port = Number(process.env.PORT || 8080);
 app.listen(port, '0.0.0.0', async () => {
   console.log(`API on ${port}`);
   try { await runDbHotfixes(); } catch (e:any) { console.error('[hotfix] ddl error', e?.message); }
+  try { await backfillPiPaymentMetadata(); } catch (e:any) { console.error('[hotfix] backfill error', e?.message); }
 
   const MIG_ENABLED = (process.env.MIGRATIONS_ENABLED ?? 'false').toLowerCase() === 'true';
   if (MIG_ENABLED) {

@@ -14,32 +14,52 @@ piRouter.post('/approve/:paymentId', async (req, res) => {
     const user = (req as any).user;
     if (!user?.userId) return res.status(401).json({ success: false, error: { code: 'UNAUTH', message: 'no user' } });
 
-    // Approve upstream
-    const piResp = await platformApprove(paymentId);
-    // Fetch full payment to capture amount / metadata if not present
-    let paymentData: any = piResp.data;
-    try { const full = await platformGetPayment(paymentId); paymentData = full.data || paymentData; } catch {}
-    const amount = Number(paymentData?.amount ?? 0);
+    let paymentData: any = null;
+    try {
+      const r = await platformApprove(paymentId);
+      paymentData = r.data;
+    } catch (e:any) {
+      const data = e?.response?.data;
+      if (e?.response?.status === 400 && data?.error === 'already_approved' && data?.payment) {
+        paymentData = data.payment;
+      } else {
+        throw e;
+      }
+    }
+
+    // Optional full fetch for freshest metadata
+    try { const full = await platformGetPayment(paymentId); if (full?.data) paymentData = full.data; } catch {}
+
+    const identifier = paymentData?.identifier || paymentData?.paymentId || paymentId;
+    const amount = Number(paymentData?.amount ?? 0) || 0;
     const memo = paymentData?.memo ?? null;
-    const lockupWeeks = Number(paymentData?.metadata?.lockupWeeks ?? 0) || null;
-    const statusText = paymentData?.status?.developer_approved ? 'approved' : 'created';
+    const lockupWeeks = Number(paymentData?.metadata?.lockupWeeks ?? 0) || 0;
+    const dir = paymentData?.direction || 'user_to_app';
+    const from_address = paymentData?.from_address ?? paymentData?.fromAddress ?? null;
+    const to_address = paymentData?.to_address ?? paymentData?.toAddress ?? null;
+    const approvedJson = JSON.stringify(paymentData || {});
 
     await db.query(
-      `INSERT INTO pi_payments (pi_payment_id, direction, uid, amount_pi, status, payload, status_text, memo, lockup_weeks)
-       VALUES ($1,'U2A',COALESCE($2::text,'unknown'),$3,$4,$5::jsonb,$6,$7,$8)
-       ON CONFLICT (pi_payment_id) DO UPDATE
-         SET payload=EXCLUDED.payload,
-             status_text=EXCLUDED.status_text,
-             memo=EXCLUDED.memo,
-             lockup_weeks=EXCLUDED.lockup_weeks,
-             amount_pi = CASE WHEN pi_payments.amount_pi=0 AND EXCLUDED.amount_pi>0 THEN EXCLUDED.amount_pi ELSE pi_payments.amount_pi END,
-             updated_at=now()`,
-      [paymentId, user.uid ?? null, Number.isFinite(amount) ? amount : 0, statusText === 'approved' ? 'approved' : 'created', JSON.stringify(paymentData || {}), statusText, memo, lockupWeeks]
+      `INSERT INTO pi_payments (
+         pi_payment_id, direction, uid, amount_pi, status, payload, status_text, memo, lockup_weeks, from_address, to_address
+       ) VALUES ($1,$2,COALESCE($3::text,'unknown'),$4,$5,$6::jsonb,'approved',$7,$8,$9,$10)
+       ON CONFLICT (pi_payment_id) DO UPDATE SET
+         amount_pi=CASE WHEN pi_payments.amount_pi=0 AND EXCLUDED.amount_pi>0 THEN EXCLUDED.amount_pi ELSE pi_payments.amount_pi END,
+         memo=EXCLUDED.memo,
+         lockup_weeks=EXCLUDED.lockup_weeks,
+         status='approved',
+         status_text='approved',
+         payload=EXCLUDED.payload,
+         from_address=COALESCE(EXCLUDED.from_address, pi_payments.from_address),
+         to_address=COALESCE(EXCLUDED.to_address, pi_payments.to_address),
+         direction=COALESCE(EXCLUDED.direction, pi_payments.direction),
+         updated_at=now()`,
+      [identifier, dir === 'user_to_app' ? 'U2A' : dir, user.uid ?? null, amount, 'approved', approvedJson, memo, lockupWeeks, from_address, to_address]
     );
 
-    res.json({ success: true });
-  } catch (e: any) {
-    res.status(400).json({ success: false, error: { code: 'APPROVE_FAIL', message: e.message } });
+    res.json({ success: true, paymentId: identifier });
+  } catch (e:any) {
+    res.status(400).json({ success:false, error:{ code:'APPROVE_FAIL', message: e?.message || 'approve failed'} });
   }
 });
 
@@ -61,58 +81,86 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
 
     const piResp = await platformComplete(paymentId, txid);
     let paymentData: any = piResp.data;
-    try { const full = await platformGetPayment(paymentId); paymentData = full.data || paymentData; } catch {}
-    const amount = Number(paymentData?.amount ?? 0);
+    try { const full = await platformGetPayment(paymentId); if (full?.data) paymentData = full.data; } catch {}
+    const identifier = paymentData?.identifier || paymentData?.paymentId || paymentId;
+    const amount = Number(paymentData?.amount ?? 0) || 0;
     const memo = paymentData?.memo ?? null;
     const lockupWeeks = Number(paymentData?.metadata?.lockupWeeks ?? 0) || 0;
+    const dir = paymentData?.direction || 'user_to_app';
+    const from_address = paymentData?.from_address ?? paymentData?.fromAddress ?? null;
+    const to_address = paymentData?.to_address ?? paymentData?.toAddress ?? null;
+    const payloadJson = JSON.stringify(paymentData || {});
 
     await withTx(async (tx) => {
       await tx.query(
-        `UPDATE pi_payments
-           SET status='completed',
-               status_text='completed',
-               txid=$2,
-               amount_pi = CASE WHEN amount_pi=0 AND $3 IS NOT NULL THEN $3 ELSE amount_pi END,
-               payload=$4::jsonb,
-               memo=$5,
-               lockup_weeks=$6,
-               updated_at=now()
+        `UPDATE pi_payments SET
+           status='completed',
+           status_text='completed',
+           txid=$2,
+           amount_pi=CASE WHEN amount_pi=0 AND $3>0 THEN $3 ELSE amount_pi END,
+           payload=$4::jsonb,
+           memo=$5,
+           lockup_weeks=$6,
+           from_address=COALESCE($7, from_address),
+           to_address=COALESCE($8, to_address),
+           direction=COALESCE($9, direction),
+           updated_at=now()
          WHERE pi_payment_id=$1`,
-        [paymentId, txid, Number.isFinite(amount) ? amount : null, JSON.stringify(paymentData || {}), memo, lockupWeeks || null]
+        [identifier, txid, amount, payloadJson, memo, lockupWeeks, from_address, to_address, dir]
       );
 
-      // Credit stake + balance if not already (simple guard: check existing stake for this payment via tx_ref?)
-      if (user?.userId && amount > 0) {
-        const apyRow = await tx.query<{ apy_bps: number }>(`SELECT apy_bps FROM v_apy_for_lock WHERE lockup_weeks=$1 LIMIT 1`, [lockupWeeks]);
-        const apy_bps = apyRow.rows[0]?.apy_bps ?? 500;
-        const init_fee_bps = lockupWeeks === 0 ? 50 : 0;
-        await tx.query(
-          `INSERT INTO stakes (user_id, amount_pi, lockup_weeks, apy_bps, init_fee_bps)
-             VALUES ($1,$2,$3,$4,$5)
-             ON CONFLICT DO NOTHING`,
-          [user.userId, amount, lockupWeeks, apy_bps, init_fee_bps]
-        );
-        await tx.query(
-          `INSERT INTO balances (user_id, hyapi_amount)
-             VALUES ($1,$2)
-             ON CONFLICT (user_id) DO UPDATE SET hyapi_amount = balances.hyapi_amount + EXCLUDED.hyapi_amount`,
-          [user.userId, amount]
-        );
+      // Resolve user id by uid/pi identity
+      let userId: number | null = user?.userId ?? null;
+      if (!userId && paymentData?.user_uid) {
+        const r = await tx.query<{ id: number }>(`SELECT id FROM users WHERE uid=$1 LIMIT 1`, [paymentData.user_uid]);
+        userId = r.rows[0]?.id ?? null;
       }
 
-      // Record liquidity event (deposit) with new meta/amount columns if present
-      try {
-        await tx.query(
-          `INSERT INTO liquidity_events(kind, amount, meta, amount_usd, tx_ref)
-             VALUES ('deposit',$1,$2::jsonb,$3,$4)`,
-          [Number.isFinite(amount) ? amount : 0, JSON.stringify({ paymentId, txid, memo, lockupWeeks }), (Number.isFinite(amount) ? amount : 0) * Number(process.env.PI_USD_PRICE ?? '0.35'), `pi:${paymentId}`]
-        );
-      } catch {}
+      // Idempotent credit via liquidity_events tx_ref
+      if (userId && amount > 0) {
+        const existing = await tx.query(`SELECT 1 FROM liquidity_events WHERE tx_ref=$1 LIMIT 1`, [`pi:${identifier}`]);
+        if (existing.rowCount === 0) {
+          const apyRow = await tx.query<{ apy_bps: number }>(`SELECT apy_bps FROM v_apy_for_lock WHERE lockup_weeks=$1 LIMIT 1`, [lockupWeeks]);
+          const apy_bps = apyRow.rows[0]?.apy_bps ?? 500;
+          const init_fee_bps = lockupWeeks === 0 ? 50 : 0;
+          await tx.query(
+            `INSERT INTO stakes (user_id, amount_pi, lockup_weeks, apy_bps, init_fee_bps)
+             VALUES ($1,$2,$3,$4,$5)`,
+            [userId, amount, lockupWeeks, apy_bps, init_fee_bps]
+          );
+          await tx.query(
+            `INSERT INTO balances (user_id, hyapi_amount)
+             VALUES ($1,$2)
+             ON CONFLICT (user_id) DO UPDATE SET hyapi_amount = balances.hyapi_amount + EXCLUDED.hyapi_amount`,
+            [userId, amount]
+          );
+          try {
+            await tx.query(
+              `INSERT INTO liquidity_events(kind, amount, meta, amount_usd, tx_ref)
+               VALUES ('deposit',$1,$2::jsonb,$3,$4)`,
+              [amount, JSON.stringify({ paymentId: identifier, txid, memo, lockupWeeks }), amount * Number(process.env.PI_USD_PRICE ?? '0.35'), `pi:${identifier}`]
+            );
+          } catch {}
+          console.log('[deposit/credited]', { paymentId: identifier, userId, principal: amount });
+        }
+      }
     });
 
-    res.json({ success: true });
-  } catch (e: any) {
-    res.status(400).json({ success: false, error: { code: 'COMPLETE_FAIL', message: e.message } });
+    res.json({ success: true, paymentId: identifier });
+  } catch (e:any) {
+    res.status(400).json({ success:false, error:{ code:'COMPLETE_FAIL', message: e?.message || 'complete failed'} });
+  }
+});
+
+// Debug inspection endpoint
+piRouter.get('/debug/payments/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const payment = await db.query(`SELECT * FROM pi_payments WHERE pi_payment_id=$1`, [id]);
+    const liq = await db.query(`SELECT * FROM liquidity_events WHERE tx_ref=$1`, [`pi:${id}`]);
+    res.json({ success:true, data: { payment: payment.rows[0] || null, liquidity: liq.rows } });
+  } catch (e:any) {
+    res.status(500).json({ success:false, error:{ code:'DEBUG_FAIL', message: e?.message || 'error' } });
   }
 });
 
