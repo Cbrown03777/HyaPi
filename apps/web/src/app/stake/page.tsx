@@ -239,12 +239,12 @@ export default function StakePage() {
           onReadyForServerApproval: async (paymentId: string) => {
             dbg('onReadyForServerApproval', { paymentId });
             try { const r = await serverApprove(paymentId); dbg('serverApprove ok', r); }
-            catch(e:any){ dbg('serverApprove ERR', { paymentId, msg: e?.message }); }
+            catch(e:any){ const detail = e?.response?.data || e?.body || e?.message || String(e); dbg('serverApprove ERR', { paymentId, detail }); }
           },
           onReadyForServerCompletion: async (paymentId: string, txid: string) => {
             dbg('onReadyForServerCompletion', { paymentId, txid });
             try { const r = await serverComplete(paymentId, txid); dbg('serverComplete ok', r); }
-            catch(e:any){ dbg('serverComplete ERR', { paymentId, msg: e?.message }); }
+            catch(e:any){ const detail = e?.response?.data || e?.body || e?.message || String(e); dbg('serverComplete ERR', { paymentId, detail }); }
           },
           onCancel: (paymentId: string) => dbg('onCancel', { paymentId }),
           onError: (error: any, paymentId: string) => dbg('onError', { paymentId, err: String(error) }),
@@ -513,6 +513,17 @@ export default function StakePage() {
         </DialogActions>
       </Dialog>
       {(typeof window !== 'undefined') && <PiDebugPanel />}
+      {piUser && (
+        <Box mt={2}>
+          <Button size="small" variant="outlined" onClick={async ()=>{
+            try {
+              const base = process.env.NEXT_PUBLIC_API_BASE; dbg('keycheck:start', { base });
+              const j = await fetch(`${base}/v1/pi/debug/keycheck`).then(r=>r.json());
+              dbg('keycheck', j);
+            } catch(e:any){ dbg('keycheck ERR', { msg: e?.message }); }
+          }}>Run Key Self-Test</Button>
+        </Box>
+      )}
     </Box>
   );
 }

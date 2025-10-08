@@ -38,6 +38,12 @@ import { runMigrations } from './services/migrate';
 import { startPiPayoutWorker } from './services/piPayoutWorker';
 import { recordAllocationSnapshot } from './services/alloc';
 
+// Load local env only if not production (do not override Render env in prod)
+const isProd = process.env.NODE_ENV === 'production';
+if (!isProd) {
+  dotenv.config({ path: path.resolve(__dirname, '../.env') });
+}
+
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:300',
@@ -47,6 +53,7 @@ const allowedOrigins = [
   'http://localhost:3001',
   'http://127.0.0.1:3001',
   'https://hyapi.net',
+  'https://www.hyapi.net',
   // Pi Browser Sandbox if it forwards origin; mostly we call via Next proxy so origin may be our web host
   'https://sandbox.minepi.com'
 ];
@@ -79,9 +86,7 @@ const DEBUG_PI = process.env.DEBUG_PI === '1';
 app.use(helmet({contentSecurityPolicy: false}));
 app.use(express.json());
 app.use(cors(corsOptions));
-// Compact logger for all requests
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
-// Body logger for Pi routes when DEBUG_PI=1
 app.use((req, _res, next) => {
   if (DEBUG_PI && req.url.startsWith('/v1/pi')) {
     console.log('[pi:req]', {
@@ -189,13 +194,14 @@ app.use('/v1/admin/allocator', auth, adminAllocatorRouter);
 app.use('/v1/admin', auth, manualActionsRouter);
 // Public venues rates (no bearer required) – mount before auth
 // (Already mounted publicly above)
-// Only load local .env when NOT running in production (Render uses env panel)
-if ((process.env.NODE_ENV ?? 'production') !== 'production') {
-  dotenv.config({ path: path.resolve(__dirname, '../.env') });
-}
-
-console.log('[boot] NODE_ENV=%s MIGRATIONS_ENABLED=%s',
-  process.env.NODE_ENV, process.env.MIGRATIONS_ENABLED);
+// Masked boot env logging for diagnostics
+console.log('[boot]', {
+  NODE_ENV: process.env.NODE_ENV,
+  MIGRATIONS_ENABLED: process.env.MIGRATIONS_ENABLED,
+  PI_API_BASE: process.env.PI_API_BASE,
+  PI_NETWORK: process.env.PI_NETWORK,
+  PI_API_KEY_prefix: (process.env.PI_API_KEY || '').slice(0,6)
+});
 
 const port = Number(process.env.PORT || 8080);
 app.listen(port, '0.0.0.0', async () => {
