@@ -202,6 +202,7 @@ console.log('[boot]', {
   MIGRATIONS_ENABLED: process.env.MIGRATIONS_ENABLED,
   PI_API_BASE: process.env.PI_API_BASE,
   PI_NETWORK: process.env.PI_NETWORK,
+  PI_APP_PUBLIC_present: !!process.env.PI_APP_PUBLIC,
   PI_API_KEY_prefix: (process.env.PI_API_KEY || '').slice(0,6)
 });
 

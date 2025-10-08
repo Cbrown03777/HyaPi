@@ -59,3 +59,17 @@ export async function getMeWithUserToken(userAccessToken: string) {
   const { data } = await axios.get(url, { headers: { Authorization: `Bearer ${userAccessToken}` } });
   return data;
 }
+
+export async function getPaymentAtPi(paymentId: string) {
+  ensureServerKey();
+  const url = `${PI_BASE}/payments/${encodeURIComponent(paymentId)}`;
+  const headers = { Authorization: `Key ${PI_KEY}` };
+  return axios.get(url, { headers, timeout: 15_000 });
+}
+
+export async function completePaymentAtPiStrict(id: string, txid: string) {
+  ensureServerKey();
+  const url = `${PI_BASE}/payments/${encodeURIComponent(id)}/complete`;
+  const headers = { Authorization: `Key ${PI_KEY}`, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } as const;
+  return axios.post(url, { txid }, { headers, timeout: 10_000 });
+}
