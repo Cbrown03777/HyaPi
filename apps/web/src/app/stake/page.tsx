@@ -260,6 +260,9 @@ export default function StakePage() {
               const j = await r.json().catch(()=>null);
               dbg('server complete resp', { status: r.status, body: j });
               if (!r.ok) throw new Error(`server complete failed: ${r.status}`);
+              if (j?.credited) {
+                toast.success(`Deposit complete! +${fmtNumber(Number(j?.stake?.principal_pi||0))} Pi credited`);
+              }
             } catch(e:any){ dbg('serverComplete ERR', { paymentId, msg: e?.message }); }
           },
           onCancel: (paymentId: string) => dbg('onCancel', { paymentId }),
