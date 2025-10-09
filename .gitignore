@@ -139,3 +139,8 @@ pgdata/
 # --- allow web lib utils for build ---
 !apps/web/src/lib/
 !apps/web/src/lib/*.ts
+# keep infra private, but allow SQL migrations
+infra/*
+!infra/db/
+infra/db/*
+!infra/db/*.sql
