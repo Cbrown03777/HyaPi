@@ -47,33 +47,81 @@ if (!isProd) {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
 }
 
-const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:300',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:300',
-  'http://wsl.localhost:3000',
-  'http://localhost:3001',
-  'http://127.0.0.1:3001',
-  'https://hyapi.net',
-  'https://www.hyapi.net',
-  // Pi Browser Sandbox if it forwards origin; mostly we call via Next proxy so origin may be our web host
-  'https://sandbox.minepi.com'
+// CORS allowlist via hostname/suffix matcher
+const DEBUG_CORS = process.env.DEBUG_CORS === '1';
+console.log('[boot] ALLOWED_ORIGINS raw =', process.env.ALLOWED_ORIGINS);
+
+// Exact hostnames we always allow
+const HOST_ALLOWLIST = new Set<string>([
+  'hyapi.net',
+  'www.hyapi.net',
+  'api.hyapi.net',
+  'localhost',
+  '127.0.0.1',
+  'wsl.localhost',
+]);
+
+// Hostname suffixes we allow (covers Vercel previews & Pi domains)
+const SUFFIX_ALLOWLIST: string[] = [
+  '.vercel.app',
+  '.minepi.com', // sandbox.minepi.com, other Pi surfaces
+  '.pinet.com',  // wallet.pinet.com etc.
 ];
 
-// Merge env-provided origins
+// Merge env ALLOWED_ORIGINS (comma-separated hostnames or full URLs)
 if (process.env.ALLOWED_ORIGINS) {
-  for (const o of process.env.ALLOWED_ORIGINS.split(',')) {
-    const trimmed = o.trim();
-    if (trimmed && !allowedOrigins.includes(trimmed)) allowedOrigins.push(trimmed);
+  for (const raw of process.env.ALLOWED_ORIGINS.split(',')) {
+    const s = raw.trim();
+    if (!s) continue;
+    try {
+      const u = new URL(s);
+      HOST_ALLOWLIST.add(u.hostname.toLowerCase());
+    } catch {
+      const v = s.toLowerCase();
+      if (v.startsWith('*.')) SUFFIX_ALLOWLIST.push(v.slice(1)); // "*.foo.com" -> ".foo.com"
+      else HOST_ALLOWLIST.add(v);
+    }
   }
 }
 
+function isAllowedOrigin(origin?: string | null): boolean {
+  if (!origin) return true; // health checks, curl, same-origin SSR
+  let hostname: string;
+  try {
+    const u = new URL(origin);
+    if (!['https:', 'http:'].includes(u.protocol)) return false;
+    hostname = u.hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (HOST_ALLOWLIST.has(hostname)) return true;
+  // Allow localhost ports explicitly
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === 'wsl.localhost') return true;
+  return SUFFIX_ALLOWLIST.some(sfx => hostname.endsWith(sfx));
+}
 
 const corsOptions: cors.CorsOptions = {
   origin(origin, cb) {
-    if (!origin) return cb(null, true); // curl / Postman / same-origin
-    if (allowedOrigins.includes(origin)) return cb(null, true);
+    const ok = isAllowedOrigin(origin);
+    if (ok) return cb(null, true);
+    if (DEBUG_CORS) {
+      // Best-effort: origin callback doesn't expose req; attempt to grab via arguments
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reqLike: any = (arguments as any)?.[2]?.req;
+      console.warn('[CORS block]', {
+        origin,
+        path: reqLike?.url,
+      });
+    } else {
+      // Minimal, but include captured headers if present via earlier middleware
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reqLike: any = (arguments as any)?.[2]?.req;
+      console.warn('[CORS block]', {
+        origin,
+        referer: reqLike?.headers?.referer,
+        xfh: reqLike?.headers?.['x-forwarded-host'],
+      });
+    }
     return cb(new Error('Not allowed by CORS'));
   },
   methods: ['GET', 'POST', 'OPTIONS'],
@@ -87,8 +135,17 @@ const corsOptions: cors.CorsOptions = {
 const app = express();
 const DEBUG_PI = process.env.DEBUG_PI === '1';
 app.use(helmet({contentSecurityPolicy: false}));
-app.use(express.json());
+// Stash headers for potential CORS logging
+app.use((req, _res, next) => {
+  (req as any).__origin = req.headers.origin || null;
+  (req as any).__referer = req.headers.referer || null;
+  (req as any).__xfh = req.headers['x-forwarded-host'] || null;
+  next();
+});
+// CORS FIRST
 app.use(cors(corsOptions));
+// Then body parsing
+app.use(express.json());
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
 app.use((req, _res, next) => {
   if (DEBUG_PI && req.url.startsWith('/v1/pi')) {
