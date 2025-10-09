@@ -21,6 +21,7 @@
     "//:db": "----- DB utilities -----",
     "db:migrate:nav": "psql $DATABASE_URL -f ../../infra/db/0022_nav_history.sql",
     "db:inspect": "tsx scripts/inspect-schema.ts",
+  "db:debug:portfolio": "psql \"$DATABASE_URL\" -f scripts/debug-portfolio.sql",
   "db:schema:print": "psql \"$DATABASE_URL\" -f scripts/print-schema.sql",
     "db:backfill:nav": "tsx scripts/backfill-nav-history.ts",
     "//:smoke": "----- Smoke tests -----",

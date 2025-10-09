@@ -1,3 +1,9 @@
+/**
+ * Data flow (Portfolio):
+ * - hyapi_amount sourced from v_user_portfolio (fed by balances table credit on /pi/complete).
+ * - prices from @hyapi/prices; lock status from stakes.
+ * - This ensures deposits reflect immediately on the Portfolio page post-completion.
+ */
 import { Router, Request, Response } from 'express';
 import { db } from '../services/db';
 import { getPrices, type SupportedSymbol } from '@hyapi/prices';
@@ -48,7 +54,8 @@ portfolioRouter.get('/', async (req: Request, res: Response) => {
   prices: pricesBlock,
   pps_series: ppsSeries.rows,
   has_locked_active: (locked.rows?.[0]?.cnt ?? 0) > 0,
-  early_exit_fee_bps: (locked.rows?.[0]?.cnt ?? 0) > 0 ? 100 : 0
+  early_exit_fee_bps: (locked.rows?.[0]?.cnt ?? 0) > 0 ? 100 : 0,
+  balances: { hyapi: Number(row.hyapi_amount ?? '0') }
       }
     });
   } catch (e:any) {

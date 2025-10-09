@@ -1,3 +1,9 @@
+/**
+ * Data flow (Recent Activity):
+ * - Aggregates: deposits from liquidity_events (kind='deposit'), plus stakes/redemptions/votes.
+ * - Deposit detail built from liquidity_events.meta (memo/lockupWeeks) and amount.
+ * - Keeps existing items but ensures Deposit Type/Detail are never blank.
+ */
 import { Router, Request, Response } from 'express';
 import { db } from '../services/db';
 

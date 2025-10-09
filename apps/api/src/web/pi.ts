@@ -1,3 +1,14 @@
+/**
+ * Data flow (Pi deposits):
+ * - Approve/Complete call Pi API, then upsert into pi_payments (payload, addresses, memo, lock weeks, status).
+ * - On complete, we credit user's HyaPi idempotently by inserting a liquidity_events row (idem_key) + updating balances/stakes.
+ * - Portfolio reads hyapi_amount from v_user_portfolio (fed by balances) and Activity maps from liquidity_events.
+ */
+function normalizeDirection(d?: string): 'user_to_app'|'app_to_user' {
+  if (!d) return 'user_to_app';
+  const s = String(d).toLowerCase().replace(/-/g,'_');
+  return s === 'app_to_user' ? 'app_to_user' : 'user_to_app';
+}
 import { Router } from 'express';
 import { z } from 'zod';
 import { approvePaymentAtPi as serverApprovePayment, completePaymentAtPi as serverCompletePayment } from '../services/pi';
@@ -14,7 +25,7 @@ piRouter.post('/approve/:paymentId', async (req, res) => {
     const user = (req as any).user;
     if (!user?.userId) return res.status(401).json({ success: false, error: { code: 'UNAUTH', message: 'no user' } });
 
-    let paymentData: any = null;
+  let paymentData: any = null;
     try {
       const r = await platformApprove(paymentId);
       paymentData = r.data;
@@ -34,7 +45,7 @@ piRouter.post('/approve/:paymentId', async (req, res) => {
   const amount = Number(paymentData?.amount ?? 0) || 0;
     const memo = paymentData?.memo ?? null;
     const lockupWeeks = Number(paymentData?.metadata?.lockupWeeks ?? 0) || 0;
-  const dir = 'user_to_app'; // canonical for deposits (U->A)
+  const dir = normalizeDirection('user_to_app'); // canonical for deposits (U->A)
     const from_address = paymentData?.from_address ?? paymentData?.fromAddress ?? null;
     const to_address = paymentData?.to_address ?? paymentData?.toAddress ?? null;
     const approvedJson = JSON.stringify(paymentData || {});
@@ -57,7 +68,8 @@ piRouter.post('/approve/:paymentId', async (req, res) => {
       [identifier, dir, user.uid ?? null, amount, approvedJson, memo, lockupWeeks, from_address, to_address]
     );
 
-    res.json({ success: true, paymentId: identifier, idempotent: true });
+  console.log('[pi/approve]', { id: identifier, amount, lockupWeeks, dir });
+  res.json({ success: true, paymentId: identifier, idempotent: true });
   } catch (e:any) {
     res.status(400).json({ success:false, error:{ code:'APPROVE_FAIL', message: e?.message || 'approve failed'} });
   }
@@ -86,7 +98,7 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
     const amount = Number(paymentData?.amount ?? 0) || 0;
     const memo = paymentData?.memo ?? null;
     const lockupWeeks = Number(paymentData?.metadata?.lockupWeeks ?? 0) || 0;
-  const dir = 'user_to_app';
+  const dir = normalizeDirection('user_to_app');
     const from_address = paymentData?.from_address ?? paymentData?.fromAddress ?? null;
     const to_address = paymentData?.to_address ?? paymentData?.toAddress ?? null;
     const payloadJson = JSON.stringify(paymentData || {});
@@ -147,7 +159,8 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
       }
     });
 
-    res.json({ success: true, paymentId: identifier, idempotent: true });
+  console.log('[pi/complete]', { id: identifier, amount, lockupWeeks, credited: true });
+  res.json({ success: true, paymentId: identifier, idempotent: true });
   } catch (e:any) {
     res.status(400).json({ success:false, error:{ code:'COMPLETE_FAIL', message: e?.message || 'complete failed'} });
   }
