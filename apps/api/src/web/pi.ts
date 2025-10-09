@@ -18,6 +18,13 @@ function normalizeDirection(d?: string): 'user_to_app'|'app_to_user' {
   return s === 'app_to_user' ? 'app_to_user' : 'user_to_app';
 }
 
+function isTestnetPayment(p: any): boolean {
+  try {
+    const net = String(p?.network || p?.payload?.network || '').toLowerCase();
+    return net.includes('test');
+  } catch { return false; }
+}
+
 export const piRouter = Router();
 
 piRouter.post('/approve/:paymentId', async (req, res) => {
@@ -105,6 +112,7 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
     const payloadJson = JSON.stringify(paymentData || {});
 
     await withTx(async (tx) => {
+      const is_test = isTestnetPayment(paymentData);
       // Upsert user by pi_uid and capture username/pi_address if present
       const payloadUid = paymentData?.user_uid || paymentData?.uid || paymentData?.user?.uid;
       const username = paymentData?.user?.username ?? null;
@@ -131,9 +139,10 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
            from_address=COALESCE($7, from_address),
            to_address=COALESCE($8, to_address),
            direction='user_to_app',
+           is_test=COALESCE($9,is_test),
            updated_at=now()
          WHERE pi_payment_id=$1`,
-        [identifier, txid, amount, payloadJson, memo, lockupWeeks, from_address, to_address]
+        [identifier, txid, amount, payloadJson, memo, lockupWeeks, from_address, to_address, is_test]
       );
 
       // Resolve user id by pi_uid in payload if not provided in session
@@ -168,11 +177,19 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
           );
           try {
             await tx.query(
-              `INSERT INTO liquidity_events(kind, amount, meta, amount_usd, idem_key, tx_ref)
-               VALUES ('deposit',$1,$2::jsonb,$3,$4,$5)`,
-              [amount, JSON.stringify({ paymentId: identifier, txid, memo, lockupWeeks }), amount * Number(process.env.PI_USD_PRICE ?? '0.35'), idemKey, `pi:${identifier}`]
+              `INSERT INTO liquidity_events(kind, amount, meta, amount_usd, idem_key, tx_ref, is_test)
+               VALUES ('deposit',$1,$2::jsonb,$3,$4,$5,$6)`,
+              [amount, JSON.stringify({ paymentId: identifier, txid, memo, lockupWeeks }), amount * Number(process.env.PI_USD_PRICE ?? '0.35'), idemKey, `pi:${identifier}`, is_test]
             );
-          } catch {}
+          } catch (e:any) {
+            if (e?.code === '42703') {
+              await tx.query(
+                `INSERT INTO liquidity_events(kind, amount, meta, amount_usd, idem_key, tx_ref)
+                 VALUES ('deposit',$1,$2::jsonb,$3,$4,$5)`,
+                [amount, JSON.stringify({ paymentId: identifier, txid, memo, lockupWeeks }), amount * Number(process.env.PI_USD_PRICE ?? '0.35'), idemKey, `pi:${identifier}`]
+              );
+            }
+          }
           // Update TVL buffer with notional USD
           const notionalUsd = amount * Number(process.env.PI_USD_PRICE ?? '0.35');
           await tx.query(`UPDATE tvl_buffer SET buffer_usd = buffer_usd + $1, updated_at=now() WHERE id=1`, [notionalUsd]);
@@ -210,7 +227,12 @@ piRouter.post('/payments/:id/approve', async (req, res) => {
     return res.json({ success: true, data: dto });
   } catch (e: any) {
     const status = e?.response?.status ?? 500;
-    console.error('[pi/api approve] fail', { id, status, body: e?.response?.data });
+    const body = e?.response?.data;
+    if (status === 400 && body?.error === 'already_approved') {
+      console.warn('[pi/api approve] already_approved; treating as success', { id });
+      return res.json({ success: true, data: { alreadyApproved: true } });
+    }
+    console.error('[pi/api approve] fail', { id, status, body });
     return res.status(status).json({ success: false, error: { code: 'APPROVE_FAILED', status } });
   }
 });
