@@ -105,6 +105,20 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
     const payloadJson = JSON.stringify(paymentData || {});
 
     await withTx(async (tx) => {
+      // Upsert user by pi_uid and capture username/pi_address if present
+      const payloadUid = paymentData?.user_uid || paymentData?.uid || paymentData?.user?.uid;
+      const username = paymentData?.user?.username ?? null;
+      const up = await tx.query<{ id:number }>(
+        `INSERT INTO users(pi_uid, username, pi_address)
+           VALUES ($1,$2,$3)
+         ON CONFLICT (pi_uid) DO UPDATE SET
+           username   = COALESCE(EXCLUDED.username, users.username),
+           pi_address = COALESCE(EXCLUDED.pi_address, users.pi_address)
+         RETURNING id`,
+        [payloadUid ?? null, username, from_address]
+      );
+      const upUserId = up.rows[0]?.id ?? null;
+
       await tx.query(
         `UPDATE pi_payments SET
            status='completed',
@@ -123,13 +137,13 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
       );
 
       // Resolve user id by pi_uid in payload if not provided in session
-      let userId: number | null = user?.userId ?? null;
-      const payloadUid = paymentData?.user_uid || paymentData?.uid;
+      let userId: number | null = user?.userId ?? upUserId ?? null;
+      const payloadUid2 = payloadUid;
       if (!userId && payloadUid) {
-        const r1 = await tx.query<{ id: number }>(`SELECT id FROM users WHERE pi_uid=$1 LIMIT 1`, [payloadUid]);
+        const r1 = await tx.query<{ id: number }>(`SELECT id FROM users WHERE pi_uid=$1 LIMIT 1`, [payloadUid2]);
         userId = r1.rows[0]?.id ?? null;
         if (!userId) {
-          const r2 = await tx.query<{ id: number }>(`SELECT user_id AS id FROM pi_identities WHERE uid=$1 LIMIT 1`, [payloadUid]);
+          const r2 = await tx.query<{ id: number }>(`SELECT user_id AS id FROM pi_identities WHERE uid=$1 LIMIT 1`, [payloadUid2]);
           userId = r2.rows[0]?.id ?? null;
         }
       }
@@ -159,6 +173,9 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
               [amount, JSON.stringify({ paymentId: identifier, txid, memo, lockupWeeks }), amount * Number(process.env.PI_USD_PRICE ?? '0.35'), idemKey, `pi:${identifier}`]
             );
           } catch {}
+          // Update TVL buffer with notional USD
+          const notionalUsd = amount * Number(process.env.PI_USD_PRICE ?? '0.35');
+          await tx.query(`UPDATE tvl_buffer SET buffer_usd = buffer_usd + $1, updated_at=now() WHERE id=1`, [notionalUsd]);
           console.log('[pi/complete][deposit/credited]', { paymentId: identifier, userId, principal: amount });
         }
       }

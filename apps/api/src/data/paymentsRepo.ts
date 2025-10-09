@@ -21,10 +21,12 @@ export async function recordPiPayment(args: RecordPaymentArgs) {
   await withTx(async (tx: PoolClient) => {
     // Ensure a user exists (by pi_uid) and keep latest username if provided
     await tx.query(
-      `INSERT INTO users(pi_uid, username)
-       VALUES ($1, $2)
-       ON CONFLICT (pi_uid) DO UPDATE SET username = COALESCE(EXCLUDED.username, users.username)`,
-      [user_uid, username ?? null]
+      `INSERT INTO users(pi_uid, username, pi_address)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (pi_uid) DO UPDATE SET
+         username   = COALESCE(EXCLUDED.username, users.username),
+         pi_address = COALESCE(EXCLUDED.pi_address, users.pi_address)`,
+      [user_uid, username ?? null, user_uid]
     );
     await tx.query(
       `INSERT INTO pi_payments (pi_payment_id, uid, amount_pi, status, txid, payload, from_address, to_address, memo, lockup_weeks, direction)
@@ -52,11 +54,13 @@ export async function creditStakeForDeposit(args: CreditArgs) {
   return withTx(async (tx: PoolClient) => {
     // Upsert user by pi_uid and retrieve id
     const u = await tx.query<{ id: number }>(
-      `INSERT INTO users(pi_uid, username)
-       VALUES ($1, $2)
-       ON CONFLICT (pi_uid) DO UPDATE SET username = COALESCE(EXCLUDED.username, users.username)
+      `INSERT INTO users(pi_uid, username, pi_address)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (pi_uid) DO UPDATE SET
+         username   = COALESCE(EXCLUDED.username, users.username),
+         pi_address = COALESCE(EXCLUDED.pi_address, users.pi_address)
        RETURNING id`,
-      [user_uid, username ?? null]
+      [user_uid, username ?? null, user_uid]
     );
     const userId = u.rows[0]?.id;
     if (!userId) throw new Error('user_not_found');
@@ -100,6 +104,11 @@ export async function creditStakeForDeposit(args: CreditArgs) {
         [amount * piUsd, txid ? `pi:${paymentId}:${txid}` : `pi:${paymentId}`, idemKey, amount, JSON.stringify({ paymentId, txid: txid ?? null, memo: memo ?? null, lockupWeeks: lockWeeks })]
       );
     } catch {}
+
+    // Mirror into TVL buffer exactly once per idemKey (same guard as above)
+    await tx.query(`UPDATE tvl_buffer SET buffer_usd = buffer_usd + $1, updated_at = now() WHERE id=1`, [amount * piUsd]);
+
+    console.log('[deposit][credited]', { userId, amount, lockWeeks, paymentId, idemKey });
 
     return { stakeId: stake.rows[0]?.id, amount, lockWeeks, apy_bps };
   });
