@@ -47,11 +47,10 @@ if (!isProd) {
   dotenv.config({ path: path.resolve(__dirname, '../.env') });
 }
 
-// CORS allowlist via hostname/suffix matcher
+// CORS allowlist via hostname/suffix matcher (delegate with per-request logs)
 const DEBUG_CORS = process.env.DEBUG_CORS === '1';
 console.log('[boot] ALLOWED_ORIGINS raw =', process.env.ALLOWED_ORIGINS);
 
-// Exact hostnames we always allow
 const HOST_ALLOWLIST = new Set<string>([
   'hyapi.net',
   'www.hyapi.net',
@@ -60,15 +59,8 @@ const HOST_ALLOWLIST = new Set<string>([
   '127.0.0.1',
   'wsl.localhost',
 ]);
+const SUFFIX_ALLOWLIST: string[] = ['.vercel.app', '.minepi.com', '.pinet.com'];
 
-// Hostname suffixes we allow (covers Vercel previews & Pi domains)
-const SUFFIX_ALLOWLIST: string[] = [
-  '.vercel.app',
-  '.minepi.com', // sandbox.minepi.com, other Pi surfaces
-  '.pinet.com',  // wallet.pinet.com etc.
-];
-
-// Merge env ALLOWED_ORIGINS (comma-separated hostnames or full URLs)
 if (process.env.ALLOWED_ORIGINS) {
   for (const raw of process.env.ALLOWED_ORIGINS.split(',')) {
     const s = raw.trim();
@@ -78,59 +70,26 @@ if (process.env.ALLOWED_ORIGINS) {
       HOST_ALLOWLIST.add(u.hostname.toLowerCase());
     } catch {
       const v = s.toLowerCase();
-      if (v.startsWith('*.')) SUFFIX_ALLOWLIST.push(v.slice(1)); // "*.foo.com" -> ".foo.com"
+      if (v.startsWith('*.')) SUFFIX_ALLOWLIST.push(v.slice(1));
       else HOST_ALLOWLIST.add(v);
     }
   }
 }
 
-function isAllowedOrigin(origin?: string | null): boolean {
-  if (!origin) return true; // health checks, curl, same-origin SSR
-  let hostname: string;
-  try {
-    const u = new URL(origin);
-    if (!['https:', 'http:'].includes(u.protocol)) return false;
-    hostname = u.hostname.toLowerCase();
-  } catch {
-    return false;
-  }
+function isAllowedHost(hostname: string) {
   if (HOST_ALLOWLIST.has(hostname)) return true;
-  // Allow localhost ports explicitly
-  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === 'wsl.localhost') return true;
   return SUFFIX_ALLOWLIST.some(sfx => hostname.endsWith(sfx));
 }
-
-const corsOptions: cors.CorsOptions = {
-  origin(origin, cb) {
-    const ok = isAllowedOrigin(origin);
-    if (ok) return cb(null, true);
-    if (DEBUG_CORS) {
-      // Best-effort: origin callback doesn't expose req; attempt to grab via arguments
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const reqLike: any = (arguments as any)?.[2]?.req;
-      console.warn('[CORS block]', {
-        origin,
-        path: reqLike?.url,
-      });
-    } else {
-      // Minimal, but include captured headers if present via earlier middleware
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const reqLike: any = (arguments as any)?.[2]?.req;
-      console.warn('[CORS block]', {
-        origin,
-        referer: reqLike?.headers?.referer,
-        xfh: reqLike?.headers?.['x-forwarded-host'],
-      });
-    }
-    return cb(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
-  credentials: false,
-  maxAge: 86400,
-  preflightContinue: false,
-  optionsSuccessStatus: 204,
-};
+function decide(originHeader?: string | null): { ok: boolean; host?: string } {
+  if (!originHeader) return { ok: true };
+  try {
+    const u = new URL(originHeader);
+    const ok = ['http:', 'https:'].includes(u.protocol) && isAllowedHost(u.hostname.toLowerCase());
+    return { ok, host: u.hostname.toLowerCase() };
+  } catch {
+    return { ok: false };
+  }
+}
 
 const app = express();
 const DEBUG_PI = process.env.DEBUG_PI === '1';
@@ -142,8 +101,22 @@ app.use((req, _res, next) => {
   (req as any).__xfh = req.headers['x-forwarded-host'] || null;
   next();
 });
-// CORS FIRST
-app.use(cors(corsOptions));
+// CORS FIRST using delegate to log decisions
+app.use(cors((req, cb) => {
+  const originHeader = req.headers.origin as string | undefined;
+  const { ok, host } = decide(originHeader);
+  if (DEBUG_CORS) {
+    console.log('[CORS]', { method: req.method, url: req.url, origin: originHeader || null, host: host || null, decision: ok ? 'allow' : 'deny' });
+  }
+  cb(null, {
+    origin: ok,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
+    credentials: false,
+    maxAge: 86400,
+    optionsSuccessStatus: 204,
+  });
+}));
 // Then body parsing
 app.use(express.json());
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
