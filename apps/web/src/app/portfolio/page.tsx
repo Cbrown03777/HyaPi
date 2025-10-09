@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
 import { GOV_API_BASE } from '@hyapi/shared'
-import { signInWithPi } from '@/lib/pi'
+import { piLogin, signInWithPi } from '@/lib/pi'
+import { api } from '@/lib/http'
 import { StatCard } from '@/components/StatCard'
 import { Card } from '@/components/Card'
 import { Box, Typography, Table, TableHead, TableRow, TableCell, TableBody, Chip, Skeleton, Alert, Button } from '@mui/material'
@@ -26,14 +27,25 @@ export default function PortfolioPage() {
 
   useEffect(() => {
     (async () => {
-      const maybe = await signInWithPi()
-      const t = typeof maybe === 'string' ? maybe : (maybe as any)?.accessToken ?? ''
+      // If we have a persisted token, use it; else prompt login
+      let t = ''
+      try { t = (typeof localStorage !== 'undefined' ? localStorage.getItem('hyapiBearer') : '') || '' } catch {}
+      if (!t) {
+        try {
+          const { accessToken } = await piLogin()
+          t = accessToken
+          try { if (typeof localStorage !== 'undefined') localStorage.setItem('hyapiBearer', t) } catch {}
+        } catch {
+          // No token yet; UI will show login button
+        }
+      }
       setToken(t)
       if (t) (globalThis as any).hyapiBearer = t
+      if (!t) return
       try {
-        const res = await fetch(`${GOV_API_BASE}/v1/portfolio`, { headers: { Authorization: `Bearer ${t}` } })
+        const res = await api('/v1/portfolio')
         const j = await res.json()
-        if (res.ok && j?.success) {
+        if ((res as any).ok && j?.success) {
           const data = j.data
           setHyapi(Number(data?.hyapi_amount ?? '0'))
           setPiValue(Number(data?.effective_pi_value ?? '0'))
@@ -68,7 +80,16 @@ export default function PortfolioPage() {
     <Box sx={{ mx: 'auto', maxWidth: 'lg', px: { xs: 2, sm: 3 }, py: 4 }}>
       <Box sx={{ display:'flex', alignItems:'center', mb:1 }}>
         <Typography variant="h5" fontWeight={600} sx={{ flex:1 }}>Your Portfolio</Typography>
-        <Button size="small" variant="outlined" onClick={()=>setShowProof(true)}>View on‑chain addresses</Button>
+        {!token && (
+          <Button size="small" variant="contained" onClick={async ()=>{
+            try {
+              const { accessToken } = await piLogin()
+              setToken(accessToken)
+              try { localStorage.setItem('hyapiBearer', accessToken) } catch {}
+            } catch {}
+          }}>Log in with Pi</Button>
+        )}
+        {token && <Button size="small" variant="outlined" onClick={()=>setShowProof(true)}>View on‑chain addresses</Button>}
       </Box>
 
       <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, mt: 0.5 }}>

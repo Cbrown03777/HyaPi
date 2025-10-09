@@ -60,14 +60,15 @@ piRoutesPayments.post('/complete', async (req, res) => {
     const identifier = pdata.identifier || pdata.paymentId || paymentId;
     const amount = Number(pdata.amount ?? 0);
     const user_uid = pdata.user_uid || pdata.uid || pdata.user?.uid || pdata.userUid;
+    const username = pdata?.user?.username || null;
     const lockWeeks = Number(pdata.metadata?.lockupWeeks ?? 0);
     const chainTxid = pdata.status?.transaction?.txid || txid;
     if (!identifier || !user_uid || !Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({ success:false, error:{ code:'BAD_PI_PAYMENT', message:'Invalid Pi payment payload' }});
     }
-    await recordPiPayment({ identifier, user_uid, amount, txid: chainTxid, metadata: pdata.metadata, from_address: pdata.from_address, to_address: pdata.to_address, raw: pdata });
-    const credit = await creditStakeForDeposit({ user_uid, amount, lockWeeks, paymentId: identifier, txid: chainTxid });
-    console.log('[credit]', { user_uid, amount, stakeId: credit.stakeId, paymentId: identifier });
+    await recordPiPayment({ identifier, user_uid, username, amount, txid: chainTxid, metadata: pdata.metadata, from_address: pdata.from_address, to_address: pdata.to_address, raw: pdata });
+    const credit = await creditStakeForDeposit({ user_uid, username, amount, lockWeeks, paymentId: identifier, txid: chainTxid, memo: pdata?.memo ?? null });
+    console.log('[credit]', { user_uid, username, amount, stakeId: credit.stakeId, paymentId: identifier, lockWeeks });
     res.json({ success:true, credited:true, stake:{ id: credit.stakeId, principal_pi: credit.amount, lock_weeks: credit.lockWeeks }, payment:{ id: identifier, txid: chainTxid }, pi_status:{ developer_approved: pdata.status?.developer_approved, developer_completed: pdata.status?.developer_completed } });
   } catch (e:any) {
     const status = e?.response?.status ?? 500;

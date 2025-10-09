@@ -4,11 +4,6 @@
  * - On complete, we credit user's HyaPi idempotently by inserting a liquidity_events row (idem_key) + updating balances/stakes.
  * - Portfolio reads hyapi_amount from v_user_portfolio (fed by balances) and Activity maps from liquidity_events.
  */
-function normalizeDirection(d?: string): 'user_to_app'|'app_to_user' {
-  if (!d) return 'user_to_app';
-  const s = String(d).toLowerCase().replace(/-/g,'_');
-  return s === 'app_to_user' ? 'app_to_user' : 'user_to_app';
-}
 import { Router } from 'express';
 import { z } from 'zod';
 import { approvePaymentAtPi as serverApprovePayment, completePaymentAtPi as serverCompletePayment } from '../services/pi';
@@ -16,6 +11,12 @@ import { db, withTx } from '../services/db';
 import { platformApprove, platformComplete, platformCreateA2U, platformGetPayment } from '../services/piPlatform';
 import { createA2U } from '../services/piA2U';
 import { runPiPayoutSweep } from '../services/piPayoutWorker';
+
+function normalizeDirection(d?: string): 'user_to_app'|'app_to_user' {
+  if (!d) return 'user_to_app';
+  const s = String(d).toLowerCase().replace(/-/g,'_');
+  return s === 'app_to_user' ? 'app_to_user' : 'user_to_app';
+}
 
 export const piRouter = Router();
 
@@ -121,18 +122,22 @@ piRouter.post('/complete/:paymentId', async (req, res) => {
         [identifier, txid, amount, payloadJson, memo, lockupWeeks, from_address, to_address]
       );
 
-      // Resolve user id by uid in payload if not provided in session
+      // Resolve user id by pi_uid in payload if not provided in session
       let userId: number | null = user?.userId ?? null;
       const payloadUid = paymentData?.user_uid || paymentData?.uid;
       if (!userId && payloadUid) {
-        const r = await tx.query<{ id: number }>(`SELECT id FROM users WHERE uid=$1 LIMIT 1`, [payloadUid]);
-        userId = r.rows[0]?.id ?? null;
+        const r1 = await tx.query<{ id: number }>(`SELECT id FROM users WHERE pi_uid=$1 LIMIT 1`, [payloadUid]);
+        userId = r1.rows[0]?.id ?? null;
+        if (!userId) {
+          const r2 = await tx.query<{ id: number }>(`SELECT user_id AS id FROM pi_identities WHERE uid=$1 LIMIT 1`, [payloadUid]);
+          userId = r2.rows[0]?.id ?? null;
+        }
       }
 
       if (userId && amount > 0) {
-        const idemKey = `pi_complete:${identifier}`;
+        const idemKey = identifier; // canonical idempotency key
         const exists = await tx.query(`SELECT 1 FROM liquidity_events WHERE idem_key=$1 LIMIT 1`, [idemKey]);
-        if (exists.rowCount === 0) {
+        if ((exists?.rowCount || 0) === 0) {
           const apyRow = await tx.query<{ apy_bps: number }>(`SELECT apy_bps FROM v_apy_for_lock WHERE lockup_weeks=$1 LIMIT 1`, [lockupWeeks]);
           const apy_bps = apyRow.rows[0]?.apy_bps ?? 500;
           const init_fee_bps = lockupWeeks === 0 ? 50 : 0;
@@ -227,13 +232,7 @@ piRouter.post('/payout', async (req, res) => {
 
     try {
       const r = await platformCreateA2U({ amount: amountPi, memo: memo ?? 'HyaPi redemption', metadata, uid: user.uid });
-      const piPaymentId = r?.data?.identifier ?? r?.data?.paymentId ?? 'unknown';
-      await db.query(
-        `INSERT INTO pi_payments(pi_payment_id, direction, uid, amount_pi, status)
-         VALUES ($1,'A2U',$2,$3,'created')
-         ON CONFLICT (pi_payment_id) DO NOTHING`,
-        [piPaymentId, user.uid, amountPi]
-      );
+      const piPaymentId = (r as any)?.data?.identifier ?? (r as any)?.data?.paymentId;
       res.json({ success: true, data: { piPaymentId } });
     } catch (e: any) {
       const msg = e?.message ?? String(e);
