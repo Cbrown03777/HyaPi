@@ -10,14 +10,46 @@ export const piRoutesPayments = Router();
 piRoutesPayments.post('/approve', async (req, res) => {
   try {
     const body = z.object({ paymentId: z.string().min(4) }).parse(req.body);
-    // Call raw Pi approve with full logging & propagate Pi status
-    const data = await approvePaymentAtPi(body.paymentId);
-    res.json({ success: true, data });
+    // Call Pi approve and persist approval state
+    try {
+      const data = await approvePayment(body.paymentId);
+      return res.json({ success: true, data });
+    } catch (e:any) {
+      const status = e?.response?.status ?? 500;
+      const piBody = e?.response?.data ?? null;
+      if (status === 400 && piBody?.error === 'already_approved' && piBody?.payment) {
+        // Treat as success and persist a minimal approved row
+        try { await approvePayment(body.paymentId); } catch {}
+        return res.json({ success: true, data: { alreadyApproved: true } });
+      }
+      throw e;
+    }
   } catch (e: any) {
     const status = e?.response?.status ?? 500;
     const piBody = e?.response?.data ?? null;
     console.error('[pi/approve] error', status, e?.message);
     res.status(status).json({ success: false, error: { code: 'PI_APPROVE_FAIL', status, body: piBody } });
+  }
+});
+
+// New SDK callback endpoints (public): approve by path param
+piRoutesPayments.post('/payments/:id/approve', async (req, res) => {
+  const id = z.string().min(1).parse(req.params.id);
+  console.log('[pi/public approve] inbound', { id, ts: new Date().toISOString() });
+  try {
+    const dto = await approvePayment(id);
+    console.log('[pi/public approve] ok', { id });
+    return res.json({ success: true, data: dto });
+  } catch (e: any) {
+    const status = e?.response?.status ?? 500;
+    const body = e?.response?.data;
+    if (status === 400 && body?.error === 'already_approved') {
+      console.warn('[pi/public approve] already_approved; treating as success', { id });
+      try { await approvePayment(id); } catch {}
+      return res.json({ success: true, data: { alreadyApproved: true } });
+    }
+    console.error('[pi/public approve] fail', { id, status, body });
+    return res.status(status).json({ success: false, error: { code: 'APPROVE_FAILED', status } });
   }
 });
 
@@ -75,6 +107,58 @@ piRoutesPayments.post('/complete', async (req, res) => {
     const body = e?.response?.data ?? null;
     console.error('[pi/complete] error', status, e?.message);
     res.status(status).json({ success:false, error:{ code:'PI_COMPLETE_FAIL', status, body } });
+  }
+});
+
+// New SDK callback endpoints (public): complete by path param
+piRoutesPayments.post('/payments/:id/complete', async (req, res) => {
+  const id = z.string().min(1).parse(req.params.id);
+  const txid = z.string().min(4).parse(req.body?.txid);
+  console.log('[pi/public complete] inbound', { id, txid, ts: new Date().toISOString() });
+  try {
+    // Mirror the logic from /v1/pi/complete: complete at Pi, fetch payload, then persist & credit
+    let pre; try { pre = await getPaymentAtPi(id); } catch (e:any) {
+      return res.status(e?.response?.status || 502).json({ success:false, error:{ code:'PI_FETCH_FAIL', status: e?.response?.status, body: e?.response?.data }});
+    }
+    const preData = pre.data || {};
+    // attempt completion with retry-on-409
+    let completeResp: any; let attempt=0; let lastErr: any;
+    while (attempt < 3) {
+      attempt++;
+      try {
+        completeResp = await completePaymentAtPiStrict(id, txid);
+        if (completeResp.status >= 400) throw Object.assign(new Error('pi_non_2xx'), { response: completeResp });
+        break;
+      } catch (e:any) {
+        lastErr = e;
+        const code = e?.response?.status;
+        if (code && (code === 409 || code >= 500) && attempt < 3) {
+          await new Promise(r=>setTimeout(r, 250 * attempt));
+          continue;
+        }
+        return res.status(code || 500).json({ success:false, error:{ code:'PI_COMPLETE_FAIL', status: code, body: e?.response?.data }});
+      }
+    }
+    // Post fetch to confirm status
+    let post; try { post = await getPaymentAtPi(id); } catch {}
+    const pdata = (post?.data) || preData;
+    const identifier = pdata.identifier || pdata.paymentId || id;
+    const amount = Number(pdata.amount ?? 0);
+    const user_uid = pdata.user_uid || pdata.uid || pdata.user?.uid || pdata.userUid;
+    const username = pdata?.user?.username || null;
+    const lockWeeks = Number(pdata.metadata?.lockupWeeks ?? 0);
+    const chainTxid = pdata.status?.transaction?.txid || txid;
+    if (!identifier || !user_uid || !Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ success:false, error:{ code:'BAD_PI_PAYMENT', message:'Invalid Pi payment payload' }});
+    }
+    await recordPiPayment({ identifier, user_uid, username, amount, txid: chainTxid, metadata: pdata.metadata, from_address: pdata.from_address, to_address: pdata.to_address, raw: pdata });
+    const credit = await creditStakeForDeposit({ user_uid, username, amount, lockWeeks, paymentId: identifier, txid: chainTxid, memo: pdata?.memo ?? null });
+    console.log('[pi/public complete][credit]', { user_uid, username, amount, stakeId: credit.stakeId, paymentId: identifier, lockWeeks });
+    return res.json({ success:true, credited:true, stake:{ id: credit.stakeId, principal_pi: credit.amount, lock_weeks: credit.lockWeeks }, payment:{ id: identifier, txid: chainTxid } });
+  } catch (e: any) {
+    const status = e?.response?.status ?? 500;
+    console.error('[pi/public complete] fail', { id, status, body: e?.response?.data });
+    return res.status(status).json({ success: false, error: { code: 'COMPLETE_FAILED', status } });
   }
 });
 

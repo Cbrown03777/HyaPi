@@ -148,6 +148,10 @@ export async function piLogin(rawScopes?: unknown): Promise<PiLoginResult> {
     const username = (res?.user?.username || res?.user?.uid || '').toString();
     const accessToken = res?.accessToken || res?.access_token || '';
     if (!uid || !accessToken) throw new Error('Pi authenticate returned no uid or access token');
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem('hyapiBearer', accessToken);
+      if (typeof document !== 'undefined') document.cookie = `hyapiBearer=${encodeURIComponent(accessToken)}; Path=/; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+    } catch {}
     return { uid, username, accessToken };
   } catch (e:any) {
     console.error('[piLogin error]', e?.message, e?.diag || {});
@@ -159,6 +163,20 @@ export async function piLogin(rawScopes?: unknown): Promise<PiLoginResult> {
 export async function signInWithPi(): Promise<string> {
   const { accessToken } = await piLogin();
   return accessToken;
+}
+
+export function getBearer(): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const t = localStorage.getItem('hyapiBearer');
+      if (t) return t;
+    }
+    if (typeof document !== 'undefined') {
+      const m = document.cookie.match(/(?:^|; )hyapiBearer=([^;]*)/);
+      if (m && m[1]) return decodeURIComponent(m[1]);
+    }
+  } catch {}
+  return null;
 }
 
 export async function startDeposit(amountPi: number, token: string, memo = 'HyaPi stake deposit', metadata: any = {}) {
