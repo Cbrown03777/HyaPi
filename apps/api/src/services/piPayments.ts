@@ -3,12 +3,17 @@ import assert from 'node:assert';
 import { db } from './db';
 
 const PI_API_BASE = process.env.PI_API_BASE ?? 'https://api.minepi.com/v2';
-const APP_ID = process.env.PI_APP_ID || '';
-const APP_SECRET = process.env.PI_APP_SECRET || '';
-assert(APP_ID && APP_SECRET, 'PI_APP_ID/PI_APP_SECRET required');
+// Read lazily at call-time to avoid crashing server startup if not set yet
+function getAppCreds() {
+  const APP_ID = process.env.PI_APP_ID || '';
+  const APP_SECRET = process.env.PI_APP_SECRET || '';
+  return { APP_ID, APP_SECRET };
+}
 
 function piHeaders() {
   const scheme = process.env.PI_SERVER_AUTH_SCHEME || 'Key'; // 'Key' or 'Bearer'
+  const { APP_SECRET } = getAppCreds();
+  if (!APP_SECRET) throw new Error('PI_APP_SECRET not configured');
   return { Authorization: `${scheme} ${APP_SECRET}` };
 }
 

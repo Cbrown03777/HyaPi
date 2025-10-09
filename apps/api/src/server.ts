@@ -27,6 +27,7 @@ import { adminAllocatorRouter } from './web/adminAllocator';
 import { venuesRouter } from './web/venues';
 import { walletRouter } from './web/wallet';
 import { manualActionsRouter } from './web/manualActions';
+import { adminDbRouter } from './web/adminDb';
 import { govBoostRouter, govBoostPublicRouter } from './web/govBoost';
 import { govProposalsPublicRouter } from './web/govProposals';
 import { proofRouter } from './web/proof';
@@ -226,6 +227,8 @@ app.use('/v1/alloc', auth, allocRouter);
 app.use('/v1/alloc', auth, allocCurrentRouter);
 app.use('/v1/admin/allocator', auth, adminAllocatorRouter);
 app.use('/v1/admin', auth, manualActionsRouter);
+// Admin DB inspection (guarded by ADMIN_API_TOKEN header; separate from auth)
+app.use('/v1/admin/db', adminDbRouter);
 // Public venues rates (no bearer required) – mount before auth
 // (Already mounted publicly above)
 // Masked boot env logging for diagnostics
