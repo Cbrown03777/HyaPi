@@ -10,10 +10,8 @@ function ensureServerKey() {
   }
 }
 
-const reqCfg = { timeout: 15_000 } as const;
-
 function piHeaders() {
-  return { Authorization: `Key ${PI_KEY}`, 'Content-Type': 'application/json' } as const;
+  return { Authorization: `Key ${PI_KEY}`, 'X-API-KEY': PI_KEY, 'Content-Type': 'application/json' } as const;
 }
 
 export async function approvePaymentAtPi(paymentId: string) {
@@ -63,13 +61,13 @@ export async function getMeWithUserToken(userAccessToken: string) {
 export async function getPaymentAtPi(paymentId: string) {
   ensureServerKey();
   const url = `${PI_BASE}/payments/${encodeURIComponent(paymentId)}`;
-  const headers = { Authorization: `Key ${PI_KEY}` };
+  const headers = { Authorization: `Key ${PI_KEY}`, 'X-API-KEY': PI_KEY } as const;
   return axios.get(url, { headers, timeout: 15_000 });
 }
 
 export async function completePaymentAtPiStrict(id: string, txid: string) {
   ensureServerKey();
   const url = `${PI_BASE}/payments/${encodeURIComponent(id)}/complete`;
-  const headers = { Authorization: `Key ${PI_KEY}`, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } as const;
+  const headers = { Authorization: `Key ${PI_KEY}`, 'X-API-KEY': PI_KEY, 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } as const;
   return axios.post(url, { txid }, { headers, timeout: 10_000 });
 }

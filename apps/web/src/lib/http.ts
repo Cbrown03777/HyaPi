@@ -20,10 +20,12 @@ export async function api(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers || {});
   headers.set('Content-Type', headers.get('Content-Type') || 'application/json');
   try {
+    // Do not attach Authorization for public Pi callback endpoints
+    const isPiPublic = /\/v1\/pi\/(approve|complete|payments\/[^/]+\/(approve|complete))$/.test(path);
     let token: string | null = null;
     if (typeof window !== 'undefined') token = localStorage.getItem('hyapiBearer');
     if (!token) token = readCookie('hyapiBearer');
-    if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
+    if (!isPiPublic && token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
   } catch {}
   return fetch(`${base}${path}`, { ...init, headers });
 }

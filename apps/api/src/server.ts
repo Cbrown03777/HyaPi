@@ -103,7 +103,7 @@ app.use((req, _res, next) => {
   next();
 });
 // CORS FIRST using delegate to log decisions
-app.use(cors((req, cb) => {
+const corsDelegate = (req: any, cb: any) => {
   const originHeader = req.headers.origin as string | undefined;
   const { ok, host } = decide(originHeader);
   if (DEBUG_CORS) {
@@ -117,7 +117,9 @@ app.use(cors((req, cb) => {
     maxAge: 86400,
     optionsSuccessStatus: 204,
   });
-}));
+};
+app.use(cors(corsDelegate));
+app.options('*', cors(corsDelegate));
 // Then body parsing
 app.use(express.json());
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms'));
