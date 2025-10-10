@@ -4,22 +4,49 @@ import { approvePayment, completePayment, getPayment } from '../services/piPayme
 import { approvePaymentAtPi, completePaymentAtPiStrict, getPaymentAtPi } from '../services/pi';
 import { recordPiPayment, creditStakeForDeposit } from '../data/paymentsRepo';
 import assert from 'node:assert';
+import { db } from '../services/db';
 
 export const piRoutesPayments = Router();
 
 piRoutesPayments.post('/approve', async (req, res) => {
   try {
     const body = z.object({ paymentId: z.string().min(4) }).parse(req.body);
-    // Call Pi approve and persist approval state
+    // Call Pi approve using server API key and persist approval state
     try {
-      const data = await approvePayment(body.paymentId);
-      return res.json({ success: true, data });
+      const pdata = await approvePaymentAtPi(body.paymentId);
+      const identifier = pdata?.identifier || pdata?.paymentId || body.paymentId;
+      const amount = Number(pdata?.amount ?? 0) || 0;
+      const memo = pdata?.memo ?? null;
+      const lockupWeeks = Number(pdata?.metadata?.lockupWeeks ?? 0) || 0;
+      const from_address = pdata?.from_address ?? pdata?.fromAddress ?? null;
+      const to_address = pdata?.to_address ?? pdata?.toAddress ?? null;
+      await db.query(
+        `INSERT INTO pi_payments(
+           pi_payment_id, direction, uid, amount_pi, status, status_text, payload, memo, lockup_weeks, from_address, to_address, updated_at
+         ) VALUES ($1,'user_to_app','unknown',$2,'approved','approved',$3::jsonb,$4,$5,$6,$7,now())
+         ON CONFLICT (pi_payment_id) DO UPDATE SET
+           status='approved', status_text='approved', payload=EXCLUDED.payload,
+           amount_pi=CASE WHEN pi_payments.amount_pi=0 AND EXCLUDED.amount_pi>0 THEN EXCLUDED.amount_pi ELSE pi_payments.amount_pi END,
+           memo=EXCLUDED.memo, lockup_weeks=EXCLUDED.lockup_weeks,
+           from_address=COALESCE(EXCLUDED.from_address, pi_payments.from_address),
+           to_address=COALESCE(EXCLUDED.to_address, pi_payments.to_address),
+           direction='user_to_app', updated_at=now()`,
+        [identifier, amount, JSON.stringify(pdata || {}), memo, lockupWeeks, from_address, to_address]
+      );
+      return res.json({ success: true, data: pdata });
     } catch (e:any) {
       const status = e?.response?.status ?? 500;
       const piBody = e?.response?.data ?? null;
-      if (status === 400 && piBody?.error === 'already_approved' && piBody?.payment) {
-        // Treat as success and persist a minimal approved row
-        try { await approvePayment(body.paymentId); } catch {}
+      if (status === 400 && piBody?.error === 'already_approved') {
+        // Treat as success; persist minimal approved row
+        try {
+          await db.query(
+            `INSERT INTO pi_payments(pi_payment_id, status, status_text, updated_at)
+             VALUES ($1,'approved','approved',now())
+             ON CONFLICT (pi_payment_id) DO UPDATE SET status='approved', status_text='approved', updated_at=now()`,
+            [body.paymentId]
+          );
+        } catch {}
         return res.json({ success: true, data: { alreadyApproved: true } });
       }
       throw e;
@@ -37,15 +64,41 @@ piRoutesPayments.post('/payments/:id/approve', async (req, res) => {
   const id = z.string().min(1).parse(req.params.id);
   console.log('[pi/public approve] inbound', { id, ts: new Date().toISOString() });
   try {
-    const dto = await approvePayment(id);
+    const pdata = await approvePaymentAtPi(id);
+    const identifier = pdata?.identifier || pdata?.paymentId || id;
+    const amount = Number(pdata?.amount ?? 0) || 0;
+    const memo = pdata?.memo ?? null;
+    const lockupWeeks = Number(pdata?.metadata?.lockupWeeks ?? 0) || 0;
+    const from_address = pdata?.from_address ?? pdata?.fromAddress ?? null;
+    const to_address = pdata?.to_address ?? pdata?.toAddress ?? null;
+    await db.query(
+      `INSERT INTO pi_payments(
+         pi_payment_id, direction, uid, amount_pi, status, status_text, payload, memo, lockup_weeks, from_address, to_address, updated_at
+       ) VALUES ($1,'user_to_app','unknown',$2,'approved','approved',$3::jsonb,$4,$5,$6,$7,now())
+       ON CONFLICT (pi_payment_id) DO UPDATE SET
+         status='approved', status_text='approved', payload=EXCLUDED.payload,
+         amount_pi=CASE WHEN pi_payments.amount_pi=0 AND EXCLUDED.amount_pi>0 THEN EXCLUDED.amount_pi ELSE pi_payments.amount_pi END,
+         memo=EXCLUDED.memo, lockup_weeks=EXCLUDED.lockup_weeks,
+         from_address=COALESCE(EXCLUDED.from_address, pi_payments.from_address),
+         to_address=COALESCE(EXCLUDED.to_address, pi_payments.to_address),
+         direction='user_to_app', updated_at=now()`,
+      [identifier, amount, JSON.stringify(pdata || {}), memo, lockupWeeks, from_address, to_address]
+    );
     console.log('[pi/public approve] ok', { id });
-    return res.json({ success: true, data: dto });
+    return res.json({ success: true, data: pdata });
   } catch (e: any) {
     const status = e?.response?.status ?? 500;
     const body = e?.response?.data;
     if (status === 400 && body?.error === 'already_approved') {
       console.warn('[pi/public approve] already_approved; treating as success', { id });
-      try { await approvePayment(id); } catch {}
+      try {
+        await db.query(
+          `INSERT INTO pi_payments(pi_payment_id, status, status_text, updated_at)
+           VALUES ($1,'approved','approved',now())
+           ON CONFLICT (pi_payment_id) DO UPDATE SET status='approved', status_text='approved', updated_at=now()`,
+          [id]
+        );
+      } catch {}
       return res.json({ success: true, data: { alreadyApproved: true } });
     }
     console.error('[pi/public approve] fail', { id, status, body });

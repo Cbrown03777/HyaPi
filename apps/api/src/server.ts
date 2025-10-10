@@ -243,6 +243,35 @@ console.log('[boot]', {
   PI_API_KEY_prefix: (process.env.PI_API_KEY || '').slice(0,6)
 });
 
+// Route path sanity check to catch accidental absolute URLs or malformed patterns
+try {
+  const seen: string[] = [];
+  function walk(layer: any, base = '') {
+    if (!layer) return;
+    if (layer.route && layer.route.path) {
+      const paths = Array.isArray(layer.route.path) ? layer.route.path : [layer.route.path];
+      for (const p of paths) {
+        const full = `${base}${p}`;
+        seen.push(full);
+        if (typeof p === 'string') {
+          const bad = !p.startsWith('/') || /https?:\/\//i.test(p) || /\s/.test(p);
+          if (bad) throw new Error(`Invalid route path registered: "${full}"`);
+        }
+      }
+    }
+    if (layer.name === 'router' && Array.isArray(layer.handle?.stack)) {
+      const mount = layer.regexp && layer.regexp.fast_slash ? '' : (layer.regexp?.toString?.() || '').includes('^\\/?$') ? '' : '';
+      for (const l of layer.handle.stack) walk(l, base);
+    }
+  }
+  const stack = (app as any)?._router?.stack || [];
+  for (const l of stack) walk(l, '');
+  if (process.env.DEBUG_ROUTES === '1') console.log('[routes]', seen);
+} catch (e:any) {
+  console.error('[boot][route-check] failed:', e?.message);
+  throw e;
+}
+
 const port = Number(process.env.PORT || 8080);
 app.listen(port, '0.0.0.0', async () => {
   console.log(`API on ${port}`);
