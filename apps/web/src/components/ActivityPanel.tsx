@@ -31,14 +31,22 @@ export function ActivityPanel() {
         const srv = j?.data?.items as any[] | undefined;
         if (!srv || abort) return;
         for (const it of srv) {
-          log({
-            id: String(it.id ?? `${it.kind}:${it.ts}`),
-            kind: it.kind,
-            title: it.title,
-            detail: it.detail,
-            status: it.status,
-            ts: typeof it.ts === 'string' ? new Date(it.ts).getTime() : (it.ts ?? Date.now()),
-          });
+          const kind = String(it.kind || '').toUpperCase();
+          const typeLabel = kind === 'DEPOSIT' ? 'Deposit' : kind === 'REDEEM' ? 'Redemption' : kind || 'Activity';
+          const lock = Number(it.lockupWeeks ?? it.lockup_weeks ?? 0) || 0;
+          const parts: string[] = [];
+          parts.push(lock > 0 ? `Lockup: ${lock} weeks` : 'No lockup');
+          const tx: string | undefined = it.txid || (it.meta?.txid);
+          if (tx) parts.push(`Tx: ${String(tx).slice(0,8)}…`);
+          const detail = parts.join(' • ');
+          const tsMs = it.createdAt ? Date.parse(it.createdAt) : (typeof it.ts === 'string' ? Date.parse(it.ts) : (it.ts ?? Date.now()));
+          const id = String(it.paymentId || it.identifier || it.payment_id || `${kind}:${tsMs}`);
+          let mappedKind: import('./ActivityProvider').ActivityKind = 'execute';
+          if (kind === 'DEPOSIT') mappedKind = 'execute';
+          else if (kind === 'REDEEM') mappedKind = 'redeem';
+          else if (kind === 'STAKE') mappedKind = 'stake';
+          else if (kind === 'VOTE') mappedKind = 'vote';
+          log({ id, kind: mappedKind, title: typeLabel, detail, status: 'success', ts: tsMs });
         }
       } catch {}
     })();

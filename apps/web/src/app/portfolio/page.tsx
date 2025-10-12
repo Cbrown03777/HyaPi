@@ -63,8 +63,24 @@ export default function PortfolioPage() {
         try {
           const ar = await api('/v1/activity/recent')
           const aj = await ar.json().catch(()=>null)
-          const items = Array.isArray(aj?.data?.items) ? aj.data.items.slice(0,5) : []
-          setActivity(items)
+          const items = Array.isArray(aj?.data?.items) ? aj.data.items.slice(0,10) : []
+          const mapped = items.map((it: any) => {
+            const kind = String(it.kind || '').toUpperCase()
+            const typeLabel = kind === 'DEPOSIT' ? 'Deposit' : kind === 'REDEEM' ? 'Redemption' : (kind || 'Activity')
+            const lock = Number(it.lockupWeeks ?? it.lockup_weeks ?? 0) || 0
+            const parts: string[] = []
+            parts.push(lock > 0 ? `Lockup: ${lock} weeks` : 'No lockup')
+            const tx: string | undefined = it.txid || it?.meta?.txid
+            if (tx) parts.push(`Tx: ${String(tx).slice(0,8)}…`)
+            const detail = parts.join(' • ')
+            const ts = it.createdAt ? Date.parse(it.createdAt) : (typeof it.ts === 'string' ? Date.parse(it.ts) : (it.ts ?? Date.now()))
+            const id = String(it.paymentId || it.identifier || it.payment_id || `${kind}:${ts}`)
+            const amount = Number(it.amount ?? 0)
+            const title = kind === 'DEPOSIT' ? `+${amount} Pi` : kind === 'REDEEM' ? `-${amount} Pi` : typeLabel
+            return { id, ts, kind: typeLabel, title, detail, status: 'success' } as ActivityItem
+          })
+          if (dev) console.debug('[portfolio][activity]', mapped)
+          setActivity(mapped)
         } catch {}
         if (dev) console.debug('[portfolio] rows', (data?.stakes?.length ?? 0))
       }

@@ -158,6 +158,17 @@ export async function creditStakeForDeposit(args: CreditArgs) {
     const idemKey = paymentId; // canonical: raw identifier
     const existed = await tx.query(`SELECT 1 FROM liquidity_events WHERE idem_key=$1 LIMIT 1`, [idemKey]);
     if ((existed?.rowCount || 0) > 0) {
+      // Ensure meta has lockupWeeks and txid even on idempotent replays
+      const metaPatch = { paymentId, txid: txid ?? null, memo: memo ?? null, lockupWeeks: lockWeeks } as any;
+      try {
+        await tx.query(
+          `UPDATE liquidity_events
+             SET meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb,
+                 tx_ref = COALESCE(tx_ref, $3)
+           WHERE idem_key=$1`,
+          [idemKey, JSON.stringify(metaPatch), txid ? `pi:${paymentId}:${txid}` : `pi:${paymentId}`]
+        );
+      } catch {}
       return { stakeId: undefined, amount, lockWeeks, apy_bps };
     }
 
