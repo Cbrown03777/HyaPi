@@ -48,11 +48,14 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
               COALESCE((le.meta->>'memo'),'') AS memo,
               le.amount
          FROM liquidity_events le
+         JOIN pi_payments pp ON pp.pi_payment_id = (le.meta->>'paymentId')
+         JOIN users u ON u.pi_uid = pp.uid
         WHERE le.kind='deposit'
           AND (le.meta ? 'paymentId')
+          AND u.id = $2
         ORDER BY le.created_at DESC
         LIMIT $1`,
-      [N]
+      [N, user.userId]
     );
 
     const items = [

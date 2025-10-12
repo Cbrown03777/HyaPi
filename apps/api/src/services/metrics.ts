@@ -133,7 +133,7 @@ function inferMarketFromVenue(venue: string): string {
 
 export async function getPortfolioMetrics(): Promise<{ ok: boolean; status?: number; data?: Metrics }>{
   try {
-    const [bufferPI, tvlPIraw, pps, venues, series] = await Promise.all([
+    const [bufferPI_raw, tvlPIraw, pps, venues, series] = await Promise.all([
       getBufferPI(),
       getTVLPI(),
       getPPS(),
@@ -151,11 +151,14 @@ export async function getPortfolioMetrics(): Promise<{ ok: boolean; status?: num
       // keep degraded default
     }
 
-  const deployedPI = venues.reduce((s, v) => s + (Number(v.deployed_pi ?? 0) || 0), 0);
-  const tvlPI = bufferPI + deployedPI;
-  const tvlUSD = tvlPI * (priceBlock.PI || 0);
-  const tvlPI_deployed = deployedPI;
-  const tvlUSD_deployed = deployedPI * (priceBlock.PI || 0);
+    // Prefer authoritative TVL from user portfolio aggregate to avoid drift with venue/buffer snapshots
+    const deployedPI = venues.reduce((s, v) => s + (Number(v.deployed_pi ?? 0) || 0), 0);
+    const tvlPI = tvlPIraw; // authoritative total PI across users
+    const tvlUSD = tvlPI * (priceBlock.PI || 0);
+    const tvlPI_deployed = deployedPI;
+    const tvlUSD_deployed = deployedPI * (priceBlock.PI || 0);
+    // Derive buffer from authoritative total when possible (non-negative)
+    const bufferPI = Math.max(0, tvlPI - deployedPI);
     const chainMix = buildChainMix(venues, bufferPI);
     const assetMix = buildAssetMix(venues, bufferPI);
     const apy7d = computeEMA7Annualized(series);

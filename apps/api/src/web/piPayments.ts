@@ -16,6 +16,10 @@ piRoutesPayments.post('/approve', async (req, res) => {
   } catch (e: any) {
     const status = e?.response?.status ?? 500;
     const piBody = e?.response?.data ?? null;
+    // Consider already_approved as success for idempotency
+    if (status === 400 && (piBody?.error === 'already_approved' || /already_approved/i.test(String(piBody)))) {
+      return res.json({ success: true, data: piBody });
+    }
     console.error('[pi/approve] error', status, e?.message);
     res.status(status).json({ success: false, error: { code: 'PI_APPROVE_FAIL', status, body: piBody } });
   }
@@ -47,6 +51,11 @@ piRoutesPayments.post('/complete', async (req, res) => {
       } catch (e:any) {
         lastErr = e;
         const code = e?.response?.status;
+        // 409 Conflict or 5xx -> retry; 400 already_completed -> treat as success and continue
+        const piBody = e?.response?.data;
+        if (code === 400 && (piBody?.error === 'already_completed' || /already_completed/i.test(String(piBody)))) {
+          break; // proceed to post-fetch/persist
+        }
         if (code && (code === 409 || code >= 500) && attempt < 3) {
           await new Promise(r=>setTimeout(r, 250 * attempt));
           continue;
