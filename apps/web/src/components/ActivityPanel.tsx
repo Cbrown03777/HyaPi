@@ -62,7 +62,8 @@ export function ActivityPanel() {
         </Stack>
         <Stack divider={<Divider flexItem sx={{ borderColor: 'divider', opacity: 0.4 }} />} spacing={0}>
           {items.slice(0,8).map(e => {
-            const color = e.status === 'success' ? 'success' : e.status === 'error' ? 'error' : 'primary';
+            const s = String(e.status || '').toUpperCase();
+            const color = s === 'COMPLETED' || s === 'SUCCESS' ? 'success' : s === 'FAILED' || s === 'ERROR' ? 'error' : 'primary';
             const icon = e.kind === 'stake' ? '⇪' : e.kind === 'redeem' ? '⇄' : e.kind === 'vote' ? '✓' : e.kind === 'finalize' ? '⚑' : '▶';
             return (
               <Stack key={e.id} direction="row" spacing={2} alignItems="flex-start" py={1}>

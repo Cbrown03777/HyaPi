@@ -63,6 +63,7 @@ export default function PortfolioPage() {
         try {
           const ar = await api('/v1/activity/recent')
           const aj = await ar.json().catch(()=>null)
+          if (dev) console.debug('[portfolio][activity raw]', aj)
           const items = Array.isArray(aj?.data?.items) ? aj.data.items.slice(0,10) : []
           const mapped = items.map((it: any) => {
             const kind = String(it.kind || '').toUpperCase()
@@ -77,7 +78,9 @@ export default function PortfolioPage() {
             const id = String(it.paymentId || it.identifier || it.payment_id || `${kind}:${ts}`)
             const amount = Number(it.amount ?? 0)
             const title = kind === 'DEPOSIT' ? `+${amount} Pi` : kind === 'REDEEM' ? `-${amount} Pi` : typeLabel
-            return { id, ts, kind: typeLabel, title, detail, status: 'success' } as ActivityItem
+            // Use server status if present; fallback success
+            const status = (typeof it.status === 'string' ? it.status : 'COMPLETED').toUpperCase()
+            return { id, ts, kind: typeLabel, title, detail, status } as ActivityItem
           })
           if (dev) console.debug('[portfolio][activity]', mapped)
           setActivity(mapped)
@@ -200,14 +203,16 @@ export default function PortfolioPage() {
               </TableHead>
               <TableBody>
                 {(activity.length ? activity : items.slice(0, 10)).map(e => {
-                  const color = e.status === 'success' ? 'success' : e.status === 'error' ? 'error' : 'default'
+                  const s = String(e.status || '').toUpperCase()
+                  const color = s === 'COMPLETED' || s === 'SUCCESS' ? 'success' : s === 'FAILED' || s === 'ERROR' ? 'error' : 'default'
+                  const label = s === 'COMPLETED' ? 'Completed' : s === 'FAILED' ? 'Failed' : s === 'PENDING' ? 'Pending' : (e.status || '')
                   return (
                     <TableRow key={e.id} sx={{ '&:last-child td': { pb: 1.5 } }}>
                       <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{new Date(e.ts).toLocaleString?.() || e.ts}</TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13 }}>{e.kind}</TableCell>
                       <TableCell sx={{ fontSize: 13 }}>{e.title}{e.detail ? ` — ${e.detail}` : ''}</TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                        <Chip label={e.status} size="small" color={color as any} variant={color === 'default' ? 'outlined' : 'filled'} sx={{ fontSize: 11, height: 22 }} />
+                        <Chip label={label} size="small" color={color as any} variant={color === 'default' ? 'outlined' : 'filled'} sx={{ fontSize: 11, height: 22 }} />
                       </TableCell>
                     </TableRow>
                   )

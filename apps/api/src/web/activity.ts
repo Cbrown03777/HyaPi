@@ -27,7 +27,8 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
            COALESCE(le.meta->>'txid', pp.txid)::text AS txid,
            COALESCE((le.meta->>'paymentId'), pp.pi_payment_id)::text AS payment_id,
            COALESCE((le.meta->>'lockupWeeks')::int, (pp.payload->'metadata'->>'lockupWeeks')::int, 0) AS lockup_weeks,
-           le.meta
+           le.meta,
+           COALESCE(pp.status, 'completed') AS raw_status
          FROM liquidity_events le
          LEFT JOIN pi_payments pp ON pp.pi_payment_id = COALESCE(le.idem_key, le.meta->>'paymentId')
          JOIN users u ON u.pi_uid = pp.uid
@@ -37,15 +38,23 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
         [user.userId, N]
       );
 
-      const items = q.rows.map((r: any) => ({
-        createdAt: r.created_at,
-        kind: r.kind || 'UNKNOWN',
-        amount: Number(r.amount ?? 0) || 0,
-        txid: r.txid || null,
-        paymentId: r.payment_id || null,
-        lockupWeeks: Number(r.lockup_weeks ?? 0) || 0,
-        meta: r.meta || null,
-      }));
+      const items = q.rows.map((r: any) => {
+        const raw = String(r.raw_status || '').toLowerCase();
+        const status = raw === 'completed' || raw === 'success' ? 'COMPLETED'
+          : raw === 'approved' || raw === 'pending' ? 'PENDING'
+          : raw === 'failed' || raw === 'error' ? 'FAILED'
+          : (r.raw_status || 'COMPLETED');
+        return {
+          createdAt: r.created_at,
+          kind: r.kind || 'UNKNOWN',
+          amount: Number(r.amount ?? 0) || 0,
+          status,
+          txid: r.txid || null,
+          paymentId: r.payment_id || null,
+          lockupWeeks: Number(r.lockup_weeks ?? 0) || 0,
+          meta: r.meta || null,
+        };
+      });
 
       if (process.env.NODE_ENV !== 'production') {
         console.log('[activity][sample]', items.slice(0, 2));
