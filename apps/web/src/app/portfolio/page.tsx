@@ -16,6 +16,8 @@ import { PiInit } from '@/components/PiInit'
 import PiLoginButton from '@/components/PiLoginButton'
 
 type PpsRow = { as_of_date: string; pps_1e18: string }
+type Metrics = { apy7d?: number; lifetimeGrowth?: number; pps?: number; degraded?: boolean }
+type ActivityItem = { id: string; ts: number; kind: string; title: string; detail?: string; status: string }
 
 export default function PortfolioPage() {
   const [token, setToken] = useState('')
@@ -23,12 +25,17 @@ export default function PortfolioPage() {
   const [piValue, setPiValue] = useState<number | null>(null)
   const [pps1e18, setPps1e18] = useState<string | null>(null)
   const [series, setSeries] = useState<PpsRow[]>([])
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
+  const [activity, setActivity] = useState<ActivityItem[]>([])
   const { items } = useActivity()
   const [showProof, setShowProof] = useState(false)
 
   const refetch = useCallback(async (): Promise<void> => {
     const dev = process.env.NODE_ENV !== 'production'
-    if (dev) console.debug('[portfolio] auth', !!token)
+    if (dev) {
+      console.debug('[portfolio] token?', !!token)
+      console.debug('[portfolio] api', process.env.NEXT_PUBLIC_API_BASE)
+    }
     if (!token) return
     try {
       const res = await api('/v1/portfolio')
@@ -45,6 +52,20 @@ export default function PortfolioPage() {
         setPiValue(Number(data?.effective_pi_value ?? '0'))
         setPps1e18(String(data?.pps_1e18 ?? '1000000000000000000'))
         setSeries((data?.pps_series ?? []) as PpsRow[])
+        // Fetch metrics (public)
+        try {
+          const mr = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/v1/portfolio/metrics`, { cache: 'no-store' })
+          const mj = await mr.json().catch(()=>null)
+          const md = mj?.data ?? mj ?? null
+          setMetrics(md ? { apy7d: md.apy7d, lifetimeGrowth: md.lifetimeGrowth, pps: md.pps, degraded: md?.prices?.degraded || false } : null)
+        } catch {}
+        // Fetch recent activity (auth)
+        try {
+          const ar = await api('/v1/activity/recent')
+          const aj = await ar.json().catch(()=>null)
+          const items = Array.isArray(aj?.data?.items) ? aj.data.items.slice(0,5) : []
+          setActivity(items)
+        } catch {}
         if (dev) console.debug('[portfolio] rows', (data?.stakes?.length ?? 0))
       }
     } catch {}
@@ -126,9 +147,9 @@ export default function PortfolioPage() {
 
       <Box sx={{ mt: 2 }}>
         {allocQ.isLoading && <Skeleton variant="rounded" height={60} />}
-        {!allocQ.isLoading && alloc && <ApyCards pps={alloc.pps} apy7d={alloc.apy7d} lifetimeGrowth={alloc.lifetimeGrowth} />}
+        {!allocQ.isLoading && alloc && <ApyCards pps={alloc.pps} apy7d={metrics?.apy7d ?? alloc.apy7d} lifetimeGrowth={metrics?.lifetimeGrowth ?? alloc.lifetimeGrowth} />}
       </Box>
-      {alloc?.degraded && (
+      {(alloc?.degraded || metrics?.degraded) && (
         <Alert severity="warning" sx={{ mt: 1 }}>
           Allocation / APY data is degraded or incomplete.
         </Alert>
@@ -162,11 +183,11 @@ export default function PortfolioPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {items.slice(0, 10).map(e => {
+                {(activity.length ? activity : items.slice(0, 10)).map(e => {
                   const color = e.status === 'success' ? 'success' : e.status === 'error' ? 'error' : 'default'
                   return (
                     <TableRow key={e.id} sx={{ '&:last-child td': { pb: 1.5 } }}>
-                      <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{new Date(e.ts).toLocaleString()}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{new Date(e.ts).toLocaleString?.() || e.ts}</TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13 }}>{e.kind}</TableCell>
                       <TableCell sx={{ fontSize: 13 }}>{e.title}{e.detail ? ` — ${e.detail}` : ''}</TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
@@ -175,7 +196,7 @@ export default function PortfolioPage() {
                     </TableRow>
                   )
                 })}
-                {!items.length && (
+                {!activity.length && !items.length && (
                   <TableRow>
                     <TableCell colSpan={4} sx={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>No recent activity.</TableCell>
                   </TableRow>

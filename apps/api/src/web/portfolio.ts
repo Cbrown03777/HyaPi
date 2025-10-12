@@ -22,14 +22,20 @@ portfolioRouter.get('/', async (req: Request, res: Response) => {
     if (!user?.userId) {
       return res.status(401).json({ success: false, error: { code:'UNAUTH', message:'missing user' }});
     }
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[portfolio][me]', { userId: user.userId });
+    }
 
-    const [pView, ppsSeries, locked] = await Promise.all([
+    const [pView, ppsSeries, locked, stakes, reds] = await Promise.all([
       db.query(`SELECT hyapi_amount::text, pps_1e18::text, effective_pi_value::text
                 FROM v_user_portfolio WHERE user_id = $1`, [user.userId]),
       db.query(`SELECT as_of_date::text, pps_1e18::text FROM pps_series ORDER BY as_of_date ASC`),
       db.query(`SELECT COUNT(*)::int AS cnt
                   FROM stakes
                  WHERE user_id=$1 AND status='active' AND lockup_weeks > 0 AND unlock_ts > now()`,[user.userId])
+      ,
+      db.query(`SELECT id, created_at::text, amount_pi::text, lockup_weeks, status FROM stakes WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50`, [user.userId]),
+      db.query(`SELECT id, created_at::text, amount_pi::text, status, eta_ts::text FROM redemptions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50`, [user.userId])
     ]);
 
     const row = pView.rows[0] ?? { hyapi_amount: '0', pps_1e18: '1000000000000000000', effective_pi_value: '0' };
@@ -55,7 +61,9 @@ portfolioRouter.get('/', async (req: Request, res: Response) => {
   pps_series: ppsSeries.rows,
   has_locked_active: (locked.rows?.[0]?.cnt ?? 0) > 0,
   early_exit_fee_bps: (locked.rows?.[0]?.cnt ?? 0) > 0 ? 100 : 0,
-  balances: { hyapi: Number(row.hyapi_amount ?? '0') }
+  balances: { hyapi: Number(row.hyapi_amount ?? '0') },
+  stakes: stakes.rows.map((r:any)=>({ id:r.id, created_at:r.created_at, amount_pi: Number(r.amount_pi), lock_weeks: r.lockup_weeks, status: r.status })),
+  redemptions: reds.rows.map((r:any)=>({ id:r.id, created_at:r.created_at, amount_pi: Number(r.amount_pi), status: r.status, eta_ts: r.eta_ts }))
       }
     });
   } catch (e:any) {

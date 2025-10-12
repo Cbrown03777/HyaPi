@@ -189,6 +189,7 @@ export async function creditStakeForDeposit(args: CreditArgs) {
        ON CONFLICT (user_id) DO UPDATE SET hyapi_amount = balances.hyapi_amount + EXCLUDED.hyapi_amount`,
       [userId, amount]
     );
+    const bal = await tx.query<{ hyapi_amount: string }>(`SELECT hyapi_amount::text FROM balances WHERE user_id=$1`, [userId]);
 
     // Insert liquidity event (idempotent by unique index)
     const piUsd = Number(process.env.PI_USD_PRICE ?? '0.35');
@@ -213,7 +214,7 @@ export async function creditStakeForDeposit(args: CreditArgs) {
     // Mirror into TVL buffer exactly once per idemKey (same guard as above)
   await tx.query(`UPDATE tvl_buffer SET buffer_usd = buffer_usd + $1, updated_at = now() WHERE id=1`, [amount * piUsd]);
 
-  console.log('[deposit][credited]', { userId, amount, lockWeeks, paymentId, idemKey, is_test: !!is_test });
+  console.log('[credit][ok]', { userId, amount, stakeId: stake.rows[0]?.id, lockWeeks, paymentId, idemKey, balanceAfter: Number(bal.rows[0]?.hyapi_amount ?? 0), is_test: !!is_test });
 
     return { stakeId: stake.rows[0]?.id, amount, lockWeeks, apy_bps };
   });
