@@ -21,17 +21,21 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
       const N = 50;
       const q = await db.query(
         `SELECT 
-           le.created_at::text        AS created_at,
-           UPPER(le.kind)::text       AS kind,
+           le.created_at::text AS created_at,
+           COALESCE(UPPER((le.kind)::text), 'DEPOSIT') AS kind,
            COALESCE(le.amount, pp.amount_pi)::text AS amount,
            COALESCE(le.meta->>'txid', pp.txid)::text AS txid,
-           COALESCE((le.meta->>'paymentId'), pp.pi_payment_id)::text AS payment_id,
-           COALESCE((le.meta->>'lockupWeeks')::int, (pp.payload->'metadata'->>'lockupWeeks')::int, 0) AS lockup_weeks,
+           COALESCE(le.idem_key, le.meta->>'paymentId', pp.pi_payment_id)::text AS payment_id,
+           COALESCE(
+             NULLIF(le.meta->>'lockupWeeks','')::int,
+             NULLIF(pp.payload->'metadata'->>'lockupWeeks','')::int,
+             0
+           ) AS lockup_weeks,
            le.meta,
            COALESCE(pp.status, 'completed') AS raw_status
          FROM liquidity_events le
          LEFT JOIN pi_payments pp ON pp.pi_payment_id = COALESCE(le.idem_key, le.meta->>'paymentId')
-         JOIN users u ON u.pi_uid = pp.uid
+         JOIN users u ON u.pi_uid = COALESCE(pp.user_uid, pp.uid)
         WHERE u.id = $1
         ORDER BY le.created_at DESC
         LIMIT $2`,
