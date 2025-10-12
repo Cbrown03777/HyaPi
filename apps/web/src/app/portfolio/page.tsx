@@ -1,7 +1,6 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
-import { GOV_API_BASE } from '@hyapi/shared'
-import { piLogin, signInWithPi } from '@/lib/pi'
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { piLogin } from '@/lib/pi'
 import { api } from '@/lib/http'
 import { StatCard } from '@/components/StatCard'
 import { Card } from '@/components/Card'
@@ -13,6 +12,8 @@ import { AllocationBar } from '@/components/portfolio/AllocationBar'
 import { ApyCards } from '@/components/portfolio/ApyCards'
 import { PublicAddresses } from '@/components/portfolio/PublicAddresses'
 import { ProofDialog } from '@/components/proof/ProofDialog'
+import { PiInit } from '@/components/PiInit'
+import PiLoginButton from '@/components/PiLoginButton'
 
 type PpsRow = { as_of_date: string; pps_1e18: string }
 
@@ -25,36 +26,59 @@ export default function PortfolioPage() {
   const { items } = useActivity()
   const [showProof, setShowProof] = useState(false)
 
-  useEffect(() => {
-    (async () => {
-      // If we have a persisted token, use it; else prompt login
-      let t = ''
-      try { t = (typeof localStorage !== 'undefined' ? localStorage.getItem('hyapiBearer') : '') || '' } catch {}
-      if (!t) {
-        try {
-          const { accessToken } = await piLogin()
-          t = accessToken
-          try { if (typeof localStorage !== 'undefined') localStorage.setItem('hyapiBearer', t) } catch {}
-        } catch {
-          // No token yet; UI will show login button
-        }
+  const refetch = useCallback(async (): Promise<void> => {
+    const dev = process.env.NODE_ENV !== 'production'
+    if (dev) console.debug('[portfolio] auth', !!token)
+    if (!token) return
+    try {
+      const res = await api('/v1/portfolio')
+      if (res.status === 401) {
+        try { localStorage.removeItem('hyapiBearer') } catch {}
+        ;(globalThis as any).hyapiBearer = ''
+        setToken('')
+        return
       }
-      setToken(t)
-      if (t) (globalThis as any).hyapiBearer = t
-      if (!t) return
-      try {
-        const res = await api('/v1/portfolio')
-        const j = await res.json()
-        if ((res as any).ok && j?.success) {
-          const data = j.data
-          setHyapi(Number(data?.hyapi_amount ?? '0'))
-          setPiValue(Number(data?.effective_pi_value ?? '0'))
-          setPps1e18(String(data?.pps_1e18 ?? '1000000000000000000'))
-          setSeries((data?.pps_series ?? []) as PpsRow[])
-        }
-      } catch {}
-    })()
+      const j = await res.json()
+      if (res.ok && j?.success) {
+        const data = j.data
+        setHyapi(Number(data?.hyapi_amount ?? '0'))
+        setPiValue(Number(data?.effective_pi_value ?? '0'))
+        setPps1e18(String(data?.pps_1e18 ?? '1000000000000000000'))
+        setSeries((data?.pps_series ?? []) as PpsRow[])
+        if (dev) console.debug('[portfolio] rows', (data?.stakes?.length ?? 0))
+      }
+    } catch {}
+  }, [token])
+
+  useEffect(() => {
+    // Initial token load from storage
+    try {
+      const t = (globalThis as any).hyapiBearer || (typeof localStorage !== 'undefined' ? localStorage.getItem('hyapiBearer') : '') || ''
+      if (typeof t === 'string' && t.trim()) setToken(t)
+    } catch {}
   }, [])
+
+  useEffect(() => {
+    // Auth event listener to refetch
+    function onAuth() {
+      try {
+        const t = (globalThis as any).hyapiBearer || (typeof localStorage !== 'undefined' ? localStorage.getItem('hyapiBearer') : '') || ''
+        if (typeof t === 'string') setToken(t)
+      } catch {}
+      void refetch()
+    }
+    window.addEventListener('hyapi-auth', onAuth as EventListener)
+    return () => window.removeEventListener('hyapi-auth', onAuth as EventListener)
+  }, [refetch])
+
+  
+
+  useEffect(() => {
+    if (token) {
+      (globalThis as any).hyapiBearer = token;
+      void refetch();
+    }
+  }, [token, refetch])
 
   const pps = useMemo(() => {
     const n = Number(pps1e18 ?? '1000000000000000000') / 1e18
@@ -78,16 +102,11 @@ export default function PortfolioPage() {
 
   return (
     <Box sx={{ mx: 'auto', maxWidth: 'lg', px: { xs: 2, sm: 3 }, py: 4 }}>
+      <PiInit />
       <Box sx={{ display:'flex', alignItems:'center', mb:1 }}>
         <Typography variant="h5" fontWeight={600} sx={{ flex:1 }}>Your Portfolio</Typography>
         {!token && (
-          <Button size="small" variant="contained" onClick={async ()=>{
-            try {
-              const { accessToken } = await piLogin()
-              setToken(accessToken)
-              try { localStorage.setItem('hyapiBearer', accessToken) } catch {}
-            } catch {}
-          }}>Log in with Pi</Button>
+          <PiLoginButton onLoggedIn={({ accessToken }) => { setToken(accessToken) }} />
         )}
         {token && <Button size="small" variant="outlined" onClick={()=>setShowProof(true)}>View on‑chain addresses</Button>}
       </Box>
