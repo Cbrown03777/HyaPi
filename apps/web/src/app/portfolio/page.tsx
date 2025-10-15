@@ -17,7 +17,7 @@ import PiLoginButton from '@/components/PiLoginButton'
 
 type PpsRow = { as_of_date: string; pps_1e18: string }
 type Metrics = { apy7d?: number; lifetimeGrowth?: number; pps?: number; degraded?: boolean }
-type ActivityItem = { id: string; ts: number; kind: string; title: string; detail?: string; status: string }
+type ActivityItem = { id: string; ts: number; kind: string; title: string; detail?: string; status: string; type?: string; details?: string }
 
 export default function PortfolioPage() {
   const [token, setToken] = useState('')
@@ -64,25 +64,43 @@ export default function PortfolioPage() {
           const ar = await api('/v1/activity/recent')
           const aj = await ar.json().catch(()=>null)
           if (dev) console.debug('[portfolio][activity raw]', aj)
-          const items = Array.isArray(aj?.data?.items) ? aj.data.items.slice(0,10) : []
-          const mapped = items.map((it: any) => {
-            const kind = String(it.kind || '').toUpperCase()
-            const typeLabel = kind === 'DEPOSIT' ? 'Deposit' : (kind === 'REDEEM' || kind === 'WITHDRAW') ? 'Redemption' : (kind || 'Activity')
-            const lock = Number(it.lockupWeeks ?? it.lockup_weeks ?? 0) || 0
-            const parts: string[] = []
-            parts.push(lock > 0 ? `Lockup: ${lock} weeks` : 'No lockup')
-            const tx: string | undefined = it.txid || it?.meta?.txid
-            if (tx) parts.push(`Tx: ${String(tx).slice(0,8)}…`)
-            const detail = parts.join(' • ')
-            const ts = it.createdAt ? Date.parse(it.createdAt) : (typeof it.ts === 'string' ? Date.parse(it.ts) : (it.ts ?? Date.now()))
-            const id = String(it.paymentId || it.identifier || it.payment_id || `${kind}:${ts}`)
-            const amount = Number(it.amount ?? 0)
-            const title = kind === 'DEPOSIT' ? `+${amount} Pi` : (kind === 'REDEEM' || kind === 'WITHDRAW') ? `-${amount} Pi` : typeLabel
-            // Use server status if present; fallback success
-            const status = (typeof it.status === 'string' ? it.status : 'COMPLETED').toUpperCase()
-            return { id, ts, kind: typeLabel, title, detail, status } as ActivityItem
+          const items = Array.isArray(aj?.data?.items)
+            ? aj.data.items
+            : (Array.isArray(aj?.items) ? aj.items : [])
+
+          const mapped = items.slice(0, 10).map((it: any) => {
+            // server shape: createdAt, kind (upper), amountPi, status, txid, paymentId, lockupWeeks, memo
+            const kindRaw = String(it.kind ?? '').toUpperCase();
+            const typeLabel = kindRaw === 'DEPOSIT'
+              ? 'Deposit'
+              : (kindRaw === 'REDEEM' || kindRaw === 'WITHDRAW')
+              ? 'Redemption'
+              : (kindRaw || 'Activity');
+
+            const lock = Number(it.lockupWeeks ?? it.lockup_weeks ?? it?.meta?.lockupWeeks ?? 0) || 0;
+            const tx: string | undefined = it.txid ?? it?.meta?.txid;
+            const parts: string[] = [];
+            parts.push(lock > 0 ? `Lockup: ${lock} weeks` : 'No lockup');
+            if (tx) parts.push(`Tx: ${String(tx).slice(0, 8)}…`);
+            const details = parts.join(' • ');
+
+            const ts = it.createdAt
+              ? Date.parse(it.createdAt)
+              : (typeof it.ts === 'string' ? Date.parse(it.ts) : (it.ts ?? Date.now()));
+
+            const id = String(it.paymentId ?? it.identifier ?? it.payment_id ?? `${kindRaw}:${ts}`);
+
+            const amount = Number(it.amountPi ?? it.amount ?? it?.meta?.amount ?? 0);
+            const title = kindRaw === 'DEPOSIT' ? `+${amount} Pi`
+              : (kindRaw === 'REDEEM' || kindRaw === 'WITHDRAW') ? `-${amount} Pi`
+              : typeLabel;
+
+            const status = String(it.status ?? 'completed').toUpperCase(); // COMPLETED|APPROVED|CREATED|FAILED
+
+            // Return the keys the table actually renders
+            return { id, ts, type: typeLabel, details, status, title } as unknown as ActivityItem
           })
-          if (dev) console.debug('[portfolio][activity]', mapped)
+          if (dev) console.debug('[portfolio][activity mapped]', mapped)
           setActivity(mapped)
         } catch {}
         if (dev) console.debug('[portfolio] rows', (data?.stakes?.length ?? 0))
@@ -209,8 +227,8 @@ export default function PortfolioPage() {
                   return (
                     <TableRow key={e.id} sx={{ '&:last-child td': { pb: 1.5 } }}>
                       <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{new Date(e.ts).toLocaleString?.() || e.ts}</TableCell>
-                      <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13 }}>{e.kind}</TableCell>
-                      <TableCell sx={{ fontSize: 13 }}>{e.title}{e.detail ? ` — ${e.detail}` : ''}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13 }}>{(e as any).type ?? (e as any).kind}</TableCell>
+                      <TableCell sx={{ fontSize: 13 }}>{e.title}{(e as any).details ? ` — ${(e as any).details}` : (e.detail ? ` — ${e.detail}` : '')}</TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Chip label={label} size="small" color={color as any} variant={color === 'default' ? 'outlined' : 'filled'} sx={{ fontSize: 11, height: 22 }} />
                       </TableCell>
