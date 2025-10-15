@@ -35,7 +35,7 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
            COALESCE(pp.status, 'completed') AS raw_status
          FROM liquidity_events le
          LEFT JOIN pi_payments pp ON pp.pi_payment_id = COALESCE(le.idem_key, le.meta->>'paymentId')
-         JOIN users u ON u.pi_uid = COALESCE(pp.user_uid, pp.uid)
+         JOIN users u ON u.pi_uid = pp.uid
         WHERE u.id = $1
         ORDER BY le.created_at DESC
         LIMIT $2`,
