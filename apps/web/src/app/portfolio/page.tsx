@@ -19,6 +19,46 @@ type PpsRow = { as_of_date: string; pps_1e18: string }
 type Metrics = { apy7d?: number; lifetimeGrowth?: number; pps?: number; degraded?: boolean }
 type ActivityItem = { id: string; ts: number; kind: string; title: string; detail?: string; status: string; type?: string; details?: string }
 
+function ExpandableDetail({ text, txid }: { text?: string; txid?: string }) {
+  const [open, setOpen] = useState(false)
+  const has = typeof text === 'string' && text.trim().length > 0
+  return (
+    <div className="mt-1">
+      {has && (
+        <p
+          className={open
+            ? 'whitespace-normal break-words break-all text-sm text-white/80'
+            : 'whitespace-nowrap overflow-hidden text-ellipsis text-sm text-white/80'}
+        >
+          {text}
+        </p>
+      )}
+      <div className="mt-1 flex items-center gap-3">
+        {has && (
+          <button
+            type="button"
+            className="text-xs underline text-white/70"
+            onClick={() => setOpen(v => !v)}
+          >
+            {open ? 'Show less' : 'Show more'}
+          </button>
+        )}
+        {txid ? (
+          <button
+            type="button"
+            className="text-xs underline text-white/70"
+            onClick={() => {
+              try { navigator?.clipboard?.writeText?.(txid) } catch {}
+            }}
+          >
+            Copy Tx
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export default function PortfolioPage() {
   const [token, setToken] = useState('')
   const [hyapi, setHyapi] = useState<number | null>(null)
@@ -210,40 +250,72 @@ export default function PortfolioPage() {
             <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>Recent activity</Typography>
           </Box>
           <Box sx={{ p: 1.25, pt: 0.5 }}>
-            <Table size="small" sx={{ '& th, & td': { border: 0 } }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>When</TableCell>
-                  <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>Type</TableCell>
-                  <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>Detail</TableCell>
-                  <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>Status</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {(activity.length ? activity : items.slice(0, 10)).map(e => {
-                  const s = String(e.status || '').toUpperCase()
-                  const color = s === 'COMPLETED' || s === 'SUCCESS' ? 'success' : s === 'FAILED' || s === 'ERROR' ? 'error' : 'default'
-                  const label = s === 'COMPLETED' ? 'Completed' : s === 'FAILED' ? 'Failed' : s === 'PENDING' ? 'Pending' : (e.status || '')
-                  return (
-                    <TableRow key={e.id} sx={{ '&:last-child td': { pb: 1.5 } }}>
-                      <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{new Date(e.ts).toLocaleString?.() || e.ts}</TableCell>
-                      <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{(e as any).type ?? (e as any).kind}</TableCell>
-                      <TableCell title={(e as any).details ?? (e as any).detail ?? ''} sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                        {e.title}{(e as any).details ? ` — ${(e as any).details}` : (e.detail ? ` — ${e.detail}` : '')}
-                      </TableCell>
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                        <Chip label={label} size="small" color={color as any} variant={color === 'default' ? 'outlined' : 'filled'} sx={{ fontSize: 11, height: 22 }} />
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-                {!activity.length && !items.length && (
+            {/* Mobile cards */}
+            <div className="md:hidden space-y-3">
+              {(activity.length ? activity : items.slice(0, 10)).map(e => {
+                const s = String(e.status || '').toUpperCase()
+                const color = s === 'COMPLETED' || s === 'SUCCESS' ? 'success' : s === 'FAILED' || s === 'ERROR' ? 'error' : 'default'
+                const label = s === 'COMPLETED' ? 'Completed' : s === 'FAILED' ? 'Failed' : s === 'PENDING' ? 'Pending' : (e.status || '')
+                const tx = (e as any).txid as string | undefined
+                return (
+                  <div key={e.id} className="rounded-xl border border-white/10 p-3">
+                    <div className="flex items-center justify-between text-xs text-white/70">
+                      <span>{new Date(e.ts).toLocaleString?.() || (e as any).ts}</span>
+                      <Chip label={label} size="small" color={color as any} variant={color === 'default' ? 'outlined' : 'filled'} sx={{ fontSize: 10, height: 20 }} />
+                    </div>
+                    <div className="mt-1 text-sm font-medium">{e.title}</div>
+                    <div className="mt-1 text-sm">
+                      <div className="text-white/70">{(e as any).type ?? (e as any).kind}</div>
+                      <ExpandableDetail
+                        text={(e as any).details ?? (e as any).detail ?? ''}
+                        {...(tx ? { txid: tx } as any : {})}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+              {!activity.length && !items.length && (
+                <div className="text-white/55 text-sm px-1">No recent activity.</div>
+              )}
+            </div>
+
+            {/* Desktop table (unchanged) */}
+            <div className="hidden md:block">
+              <Table size="small" sx={{ '& th, & td': { border: 0 } }}>
+                <TableHead>
                   <TableRow>
-                    <TableCell colSpan={4} sx={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>No recent activity.</TableCell>
+                    <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>When</TableCell>
+                    <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>Type</TableCell>
+                    <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>Detail</TableCell>
+                    <TableCell sx={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>Status</TableCell>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHead>
+                <TableBody>
+                  {(activity.length ? activity : items.slice(0, 10)).map(e => {
+                    const s = String(e.status || '').toUpperCase()
+                    const color = s === 'COMPLETED' || s === 'SUCCESS' ? 'success' : s === 'FAILED' || s === 'ERROR' ? 'error' : 'default'
+                    const label = s === 'COMPLETED' ? 'Completed' : s === 'FAILED' ? 'Failed' : s === 'PENDING' ? 'Pending' : (e.status || '')
+                    return (
+                      <TableRow key={e.id} sx={{ '&:last-child td': { pb: 1.5 } }}>
+                        <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{new Date(e.ts).toLocaleString?.() || e.ts}</TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{(e as any).type ?? (e as any).kind}</TableCell>
+                        <TableCell title={(e as any).details ?? (e as any).detail ?? ''} sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          {e.title}{(e as any).details ? ` — ${(e as any).details}` : (e.detail ? ` — ${e.detail}` : '')}
+                        </TableCell>
+                        <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                          <Chip label={label} size="small" color={color as any} variant={color === 'default' ? 'outlined' : 'filled'} sx={{ fontSize: 11, height: 22 }} />
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                  {!activity.length && !items.length && (
+                    <TableRow>
+                      <TableCell colSpan={4} sx={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>No recent activity.</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </Box>
         </Card>
       </Box>
