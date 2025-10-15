@@ -29,7 +29,7 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
              WHEN 'withdraw' THEN 'Redemption'
              ELSE INITCAP((le.kind)::text)
            END                                                     AS "kindLabel",
-           COALESCE(le.amount, pp.amount_pi)                       AS "amount",
+           (CASE WHEN (le.kind)::text = 'withdraw' THEN -1 ELSE 1 END) * COALESCE(le.amount, pp.amount_pi) AS "amountPi",
            LOWER(pp.status)                                        AS "status",
            COALESCE(le.meta->>'txid', pp.txid)                     AS "txid",
            COALESCE(le.idem_key, le.meta->>'paymentId', pp.pi_payment_id) AS "paymentId",
@@ -39,7 +39,7 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
              pp.lockup_weeks,
              0
            )                                                       AS "lockupWeeks",
-           COALESCE(le.meta->>'memo', NULL)                        AS "memo",
+           COALESCE(le.meta->>'memo', pp.memo, 'HyaPi stake deposit') AS "memo",
            le.meta                                                 AS "meta"
          FROM liquidity_events le
          JOIN pi_payments pp ON COALESCE(le.idem_key, le.meta->>'paymentId') = pp.pi_payment_id
@@ -50,7 +50,13 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
         [user.userId, N]
       );
 
-      const items = q.rows as any[];
+      const raw = q.rows as any[];
+      const items = raw.map(r => {
+        const shortTx = r.txid ? `${String(r.txid).slice(0,8)}…` : undefined;
+        const details = `Lockup: ${Number(r.lockupWeeks ?? 0) || 0} weeks` + (shortTx ? ` • Tx: ${shortTx}` : '');
+        const typeLabel = r.kindLabel;
+        return { ...r, details, typeLabel };
+      });
 
       // Optional: server-side backfill for older rows missing meta keys (idempotent)
       for (const r of items) {
