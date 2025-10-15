@@ -67,7 +67,7 @@ export default function PortfolioPage() {
           const items = Array.isArray(aj?.data?.items) ? aj.data.items.slice(0,10) : []
           const mapped = items.map((it: any) => {
             const kind = String(it.kind || '').toUpperCase()
-            const typeLabel = kind === 'DEPOSIT' ? 'Deposit' : kind === 'REDEEM' ? 'Redemption' : (kind || 'Activity')
+            const typeLabel = kind === 'DEPOSIT' ? 'Deposit' : (kind === 'REDEEM' || kind === 'WITHDRAW') ? 'Redemption' : (kind || 'Activity')
             const lock = Number(it.lockupWeeks ?? it.lockup_weeks ?? 0) || 0
             const parts: string[] = []
             parts.push(lock > 0 ? `Lockup: ${lock} weeks` : 'No lockup')
@@ -77,7 +77,7 @@ export default function PortfolioPage() {
             const ts = it.createdAt ? Date.parse(it.createdAt) : (typeof it.ts === 'string' ? Date.parse(it.ts) : (it.ts ?? Date.now()))
             const id = String(it.paymentId || it.identifier || it.payment_id || `${kind}:${ts}`)
             const amount = Number(it.amount ?? 0)
-            const title = kind === 'DEPOSIT' ? `+${amount} Pi` : kind === 'REDEEM' ? `-${amount} Pi` : typeLabel
+            const title = kind === 'DEPOSIT' ? `+${amount} Pi` : (kind === 'REDEEM' || kind === 'WITHDRAW') ? `-${amount} Pi` : typeLabel
             // Use server status if present; fallback success
             const status = (typeof it.status === 'string' ? it.status : 'COMPLETED').toUpperCase()
             return { id, ts, kind: typeLabel, title, detail, status } as ActivityItem
