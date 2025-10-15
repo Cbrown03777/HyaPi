@@ -227,8 +227,10 @@ export default function PortfolioPage() {
                   return (
                     <TableRow key={e.id} sx={{ '&:last-child td': { pb: 1.5 } }}>
                       <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{new Date(e.ts).toLocaleString?.() || e.ts}</TableCell>
-                      <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13 }}>{(e as any).type ?? (e as any).kind}</TableCell>
-                      <TableCell sx={{ fontSize: 13 }}>{e.title}{(e as any).details ? ` — ${(e as any).details}` : (e.detail ? ` — ${e.detail}` : '')}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13 }}>{(e as any).type ?? (e as any).kind}</TableCell>
+                      <TableCell title={(e as any).details ?? (e as any).detail ?? ''} sx={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.65)', fontSize: 13, textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                        {e.title}{(e as any).details ? ` — ${(e as any).details}` : (e.detail ? ` — ${e.detail}` : '')}
+                      </TableCell>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>
                         <Chip label={label} size="small" color={color as any} variant={color === 'default' ? 'outlined' : 'filled'} sx={{ fontSize: 11, height: 22 }} />
                       </TableCell>
