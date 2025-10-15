@@ -21,20 +21,28 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
       const N = 50;
       const q = await db.query(
         `SELECT 
-           le.created_at::text AS created_at,
-           COALESCE(UPPER((le.kind)::text), 'DEPOSIT') AS kind,
-           COALESCE(le.amount, pp.amount_pi)::text AS amount,
-           COALESCE(le.meta->>'txid', pp.txid)::text AS txid,
-           COALESCE(le.idem_key, le.meta->>'paymentId', pp.pi_payment_id)::text AS payment_id,
+           le.id AS _le_id,
+           le.created_at::text                                    AS "createdAt",
+           UPPER((le.kind)::text)                                  AS "kind",
+           CASE (le.kind)::text
+             WHEN 'deposit'  THEN 'Deposit'
+             WHEN 'withdraw' THEN 'Redemption'
+             ELSE INITCAP((le.kind)::text)
+           END                                                     AS "kindLabel",
+           COALESCE(le.amount, pp.amount_pi)                       AS "amount",
+           LOWER(pp.status)                                        AS "status",
+           COALESCE(le.meta->>'txid', pp.txid)                     AS "txid",
+           COALESCE(le.idem_key, le.meta->>'paymentId', pp.pi_payment_id) AS "paymentId",
            COALESCE(
              NULLIF(le.meta->>'lockupWeeks','')::int,
              NULLIF(pp.payload->'metadata'->>'lockupWeeks','')::int,
+             pp.lockup_weeks,
              0
-           ) AS lockup_weeks,
-           le.meta,
-           COALESCE(pp.status, 'completed') AS raw_status
+           )                                                       AS "lockupWeeks",
+           COALESCE(le.meta->>'memo', NULL)                        AS "memo",
+           le.meta                                                 AS "meta"
          FROM liquidity_events le
-         LEFT JOIN pi_payments pp ON pp.pi_payment_id = COALESCE(le.idem_key, le.meta->>'paymentId')
+         JOIN pi_payments pp ON COALESCE(le.idem_key, le.meta->>'paymentId') = pp.pi_payment_id
          JOIN users u ON u.pi_uid = pp.uid
         WHERE u.id = $1
         ORDER BY le.created_at DESC
@@ -42,23 +50,28 @@ activityRouter.get('/recent', async (req: Request, res: Response) => {
         [user.userId, N]
       );
 
-      const items = q.rows.map((r: any) => {
-        const raw = String(r.raw_status || '').toLowerCase();
-        const status = raw === 'completed' || raw === 'success' ? 'COMPLETED'
-          : raw === 'approved' || raw === 'pending' ? 'PENDING'
-          : raw === 'failed' || raw === 'error' ? 'FAILED'
-          : (r.raw_status || 'COMPLETED');
-        return {
-          createdAt: r.created_at,
-          kind: r.kind || 'UNKNOWN',
-          amount: Number(r.amount ?? 0) || 0,
-          status,
-          txid: r.txid || null,
-          paymentId: r.payment_id || null,
-          lockupWeeks: Number(r.lockup_weeks ?? 0) || 0,
-          meta: r.meta || null,
-        };
-      });
+      const items = q.rows as any[];
+
+      // Optional: server-side backfill for older rows missing meta keys (idempotent)
+      for (const r of items) {
+        const needsPatch = !r.paymentId || !r.txid || (r.lockupWeeks == null);
+        if (needsPatch && r._le_id) {
+          try {
+            await db.query(
+              `UPDATE liquidity_events
+                 SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_strip_nulls(
+                              jsonb_build_object(
+                                'paymentId', $2,
+                                'txid', $3,
+                                'lockupWeeks', $4
+                              )
+                            )
+               WHERE id = $1`,
+              [r._le_id, r.paymentId || null, r.txid || null, r.lockupWeeks ?? 0]
+            );
+          } catch {}
+        }
+      }
 
       if (process.env.NODE_ENV !== 'production') {
         console.log('[activity][sample]', items.slice(0, 2));
